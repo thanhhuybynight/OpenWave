@@ -8,7 +8,6 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -32,14 +31,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.automirrored.outlined.QueueMusic
-import androidx.compose.material.icons.outlined.Radio
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material3.AssistChip
@@ -113,10 +111,7 @@ fun NowPlayingScreen(
     onShuffle: () -> Unit = {},
     onRepeat: () -> Unit = {},
     onStartStation: () -> Unit = {},
-    onToggleAutoContinue: () -> Unit = {},
-    autoContinue: Boolean = true,
     stationActive: Boolean = false,
-    stationLabel: String? = null,
     stationBuilding: Boolean = false,
     voteLabel: String? = null,
     sleepState: SleepTimerState = SleepTimerState(),
@@ -242,7 +237,7 @@ fun NowPlayingScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // Secondary transport: shuffle / station / repeat
+            // Secondary transport: shuffle / station (hourglass) / repeat
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -268,11 +263,11 @@ fun NowPlayingScreen(
                     } else {
                         Icon(
                             imageVector = if (stationActive) {
-                                Icons.Filled.Radio
+                                Icons.Filled.HourglassTop
                             } else {
-                                Icons.Outlined.Radio
+                                Icons.Outlined.HourglassEmpty
                             },
-                            contentDescription = "Start station",
+                            contentDescription = "Station / radio",
                             tint = if (stationActive) scheme.primary else scheme.onSurfaceVariant,
                         )
                     }
@@ -290,34 +285,9 @@ fun NowPlayingScreen(
                 }
             }
 
-            if (stationActive || stationBuilding || stationLabel != null) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = when {
-                        stationBuilding -> "Building station…"
-                        !stationLabel.isNullOrBlank() -> stationLabel
-                        else -> "Station active"
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = scheme.primary,
-                )
-            }
+            Spacer(Modifier.height(20.dp))
 
-            Spacer(Modifier.height(16.dp))
-
-            StationSection(
-                autoContinue = autoContinue,
-                stationActive = stationActive,
-                stationLabel = stationLabel,
-                stationBuilding = stationBuilding,
-                hasTrack = track != null,
-                onStartStation = onStartStation,
-                onToggleAutoContinue = onToggleAutoContinue,
-            )
-
-            Spacer(Modifier.height(16.dp))
-
-            // Compact extras — sleep lives behind the clock button (float sheet)
+            // Crossfade only; sleep timer is the top clock button (float sheet)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -366,86 +336,6 @@ fun NowPlayingScreen(
                     showSleepTimer = false
                 },
                 onDismiss = { showSleepTimer = false },
-            )
-        }
-    }
-}
-
-@Composable
-private fun StationSection(
-    autoContinue: Boolean,
-    stationActive: Boolean,
-    stationLabel: String?,
-    stationBuilding: Boolean,
-    hasTrack: Boolean,
-    onStartStation: () -> Unit,
-    onToggleAutoContinue: () -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.Start,
-    ) {
-        Text(
-            text = "Station & radio",
-            style = MaterialTheme.typography.titleMedium,
-            color = scheme.onSurface,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = "When a song ends with nothing next, OpenWave builds a random related queue — like YT Music Station or SoundCloud radio.",
-            style = MaterialTheme.typography.bodySmall,
-            color = scheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(10.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            AssistChip(
-                onClick = onStartStation,
-                enabled = hasTrack && !stationBuilding,
-                label = {
-                    Text(
-                        when {
-                            stationBuilding -> "Building…"
-                            stationActive && !stationLabel.isNullOrBlank() -> "Restart station"
-                            else -> "Start station"
-                        },
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Outlined.Radio,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                },
-            )
-            FilterChip(
-                selected = autoContinue,
-                onClick = onToggleAutoContinue,
-                label = {
-                    Text(if (autoContinue) "Auto radio on" else "Auto radio off")
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                },
-            )
-        }
-        if (autoContinue) {
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "Queue keeps filling with related tracks after the last song.",
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSurfaceVariant,
             )
         }
     }

@@ -64,9 +64,7 @@ fun OpenWaveNavHost(
     val playError by playerVm.playError.collectAsStateWithLifecycle()
     val sleepState by playerVm.sleepState.collectAsStateWithLifecycle()
     val crossfade by playerVm.crossfadeSettings.collectAsStateWithLifecycle()
-    val autoContinue by playerVm.autoContinue.collectAsStateWithLifecycle()
     val stationActive by playerVm.stationActive.collectAsStateWithLifecycle()
-    val stationLabel by playerVm.stationLabel.collectAsStateWithLifecycle()
     val stationBuilding by playerVm.stationBuilding.collectAsStateWithLifecycle()
     var showFullPlayer by remember { mutableStateOf(false) }
     var addTrack by remember { mutableStateOf<Track?>(null) }
@@ -90,10 +88,7 @@ fun OpenWaveNavHost(
             onShuffle = playerVm::toggleShuffle,
             onRepeat = playerVm::cycleRepeat,
             onStartStation = playerVm::startStationFromCurrent,
-            onToggleAutoContinue = playerVm::toggleAutoContinue,
-            autoContinue = autoContinue,
             stationActive = stationActive,
-            stationLabel = stationLabel,
             stationBuilding = stationBuilding,
             voteLabel = voteLabel,
             sleepState = sleepState,

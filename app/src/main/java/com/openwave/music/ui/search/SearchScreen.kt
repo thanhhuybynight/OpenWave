@@ -22,7 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.outlined.Radio
+import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -320,7 +320,7 @@ private fun UnifiedTrackRow(
         }
         IconButton(onClick = onStation) {
             Icon(
-                Icons.Outlined.Radio,
+                Icons.Outlined.HourglassEmpty,
                 contentDescription = "Start station",
                 tint = scheme.onSurfaceVariant,
             )
