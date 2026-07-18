@@ -28,14 +28,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ExpandMore
-import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.Radio
 import androidx.compose.material.icons.outlined.Repeat
@@ -60,6 +62,7 @@ import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -74,6 +77,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.openwave.music.core.domain.Artist
 import com.openwave.music.core.domain.CrossfadeSettings
@@ -123,6 +128,7 @@ fun NowPlayingScreen(
 ) {
     val track = snapshot.track
     val scheme = MaterialTheme.colorScheme
+    var showSleepTimer by remember { mutableStateOf(false) }
     val scrim = Brush.verticalGradient(
         colors = listOf(
             scheme.surface.copy(alpha = 0.0f),
@@ -165,11 +171,12 @@ fun NowPlayingScreen(
                     style = MaterialTheme.typography.labelLarge,
                     color = scheme.onSurfaceVariant,
                 )
-                IconButton(onClick = { /* queue / menu */ }) {
+                // Clock opens floating sleep timer
+                IconButton(onClick = { showSleepTimer = true }) {
                     Icon(
-                        imageVector = Icons.Outlined.MoreVert,
-                        contentDescription = "More",
-                        tint = scheme.onSurface,
+                        imageVector = Icons.Outlined.Schedule,
+                        contentDescription = "Sleep timer",
+                        tint = if (sleepState.active) scheme.primary else scheme.onSurface,
                     )
                 }
             }
@@ -308,16 +315,33 @@ fun NowPlayingScreen(
                 onToggleAutoContinue = onToggleAutoContinue,
             )
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(16.dp))
 
-            // Player tools (sleep clock / crossfade) — live in the controller, not Home
-            PlayerToolsSection(
-                sleepState = sleepState,
-                crossfade = crossfade,
-                onSleepDurationMs = onSleepDurationMs,
-                onCancelSleep = onCancelSleep,
-                onCrossfade = onCrossfade,
-            )
+            // Compact extras — sleep lives behind the clock button (float sheet)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FilterChip(
+                    selected = crossfade.enabled,
+                    onClick = { onCrossfade(!crossfade.enabled) },
+                    label = { Text(if (crossfade.enabled) "Crossfade on" else "Crossfade") },
+                )
+                if (sleepState.active) {
+                    AssistChip(
+                        onClick = { showSleepTimer = true },
+                        label = { Text("Sleep ${formatRemain(sleepState.remainingMs)}") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Outlined.Schedule,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
+                    )
+                }
+            }
 
             Spacer(Modifier.height(32.dp))
         }
@@ -329,6 +353,21 @@ fun NowPlayingScreen(
                 .height(24.dp)
                 .background(scrim),
         )
+
+        if (showSleepTimer) {
+            SleepTimerFloat(
+                sleepState = sleepState,
+                onSleepDurationMs = { ms ->
+                    onSleepDurationMs(ms)
+                    showSleepTimer = false
+                },
+                onCancelSleep = {
+                    onCancelSleep()
+                    showSleepTimer = false
+                },
+                onDismiss = { showSleepTimer = false },
+            )
+        }
     }
 }
 
@@ -412,16 +451,17 @@ private fun StationSection(
     }
 }
 
+/**
+ * Floating sleep timer — clock dial only after the toolbar clock button is tapped.
+ */
 @Composable
-private fun PlayerToolsSection(
+private fun SleepTimerFloat(
     sleepState: SleepTimerState,
-    crossfade: CrossfadeSettings,
     onSleepDurationMs: (Long) -> Unit,
     onCancelSleep: () -> Unit,
-    onCrossfade: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    // Duration picker: hour hand = hours (0–23), minute hand = minutes (0–59)
     val timePickerState = rememberTimePickerState(
         initialHour = 0,
         initialMinute = 15,
@@ -430,134 +470,150 @@ private fun PlayerToolsSection(
     val selectedMs = (timePickerState.hour * 3_600_000L) + (timePickerState.minute * 60_000L)
     val selectedLabel = formatDurationHm(timePickerState.hour, timePickerState.minute)
 
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+        ),
     ) {
-        Text(
-            text = "Sleep timer",
-            style = MaterialTheme.typography.titleMedium,
-            color = scheme.onSurface,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = "Spin the clock to set how long until playback pauses.",
-            style = MaterialTheme.typography.bodySmall,
-            color = scheme.onSurfaceVariant,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(12.dp))
-
-        if (sleepState.active) {
-            // Live countdown — clock-face style remaining
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                    onClick = onDismiss,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
             Surface(
                 shape = RoundedCornerShape(28.dp),
-                color = scheme.primaryContainer,
-                tonalElevation = 1.dp,
-                modifier = Modifier.fillMaxWidth(),
+                color = scheme.surface,
+                tonalElevation = 6.dp,
+                shadowElevation = 12.dp,
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                        onClick = { /* absorb — keep dialog open when tapping card */ },
+                    ),
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 20.dp, horizontal = 16.dp),
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "Sleep timer",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = scheme.onSurface,
+                        )
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                Icons.Outlined.Close,
+                                contentDescription = "Close",
+                                tint = scheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     Text(
-                        text = "Pausing in",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = scheme.onPrimaryContainer,
+                        text = "Set how long until playback pauses.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    if (sleepState.active) {
+                        Spacer(Modifier.height(12.dp))
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = scheme.primaryContainer,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 14.dp, horizontal = 12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text(
+                                    text = "Pausing in",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = scheme.onPrimaryContainer,
+                                )
+                                Text(
+                                    text = formatRemain(sleepState.remainingMs),
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    color = scheme.onPrimaryContainer,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = selectedLabel,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = scheme.primary,
+                    )
+                    Text(
+                        text = "hours  ·  minutes",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = formatRemain(sleepState.remainingMs),
-                        style = MaterialTheme.typography.displaySmall,
-                        color = scheme.onPrimaryContainer,
-                        textAlign = TextAlign.Center,
+                    TimePicker(
+                        state = timePickerState,
+                        colors = TimePickerDefaults.colors(
+                            clockDialColor = scheme.surfaceVariant,
+                            selectorColor = scheme.primary,
+                            timeSelectorSelectedContainerColor = scheme.primaryContainer,
+                            timeSelectorSelectedContentColor = scheme.onPrimaryContainer,
+                            timeSelectorUnselectedContainerColor = scheme.surfaceVariant,
+                            timeSelectorUnselectedContentColor = scheme.onSurface,
+                        ),
                     )
                     Spacer(Modifier.height(12.dp))
-                    OutlinedButton(onClick = onCancelSleep) {
-                        Text("Cancel timer")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        if (sleepState.active) {
+                            OutlinedButton(
+                                onClick = onCancelSleep,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text("Cancel")
+                            }
+                        }
+                        Button(
+                            onClick = { onSleepDurationMs(selectedMs) },
+                            enabled = selectedMs > 0L,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(
+                                if (sleepState.active) {
+                                    "Restart $selectedLabel"
+                                } else {
+                                    "Start $selectedLabel"
+                                },
+                            )
+                        }
                     }
                 }
             }
-            Spacer(Modifier.height(16.dp))
-            Text(
-                text = "Set a new time to restart",
-                style = MaterialTheme.typography.labelMedium,
-                color = scheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(8.dp))
         }
-
-        // Material You clock dial (hours + minutes)
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = scheme.surfaceVariant.copy(alpha = 0.45f),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 16.dp, horizontal = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    text = selectedLabel,
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = scheme.primary,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "hours  ·  minutes",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(8.dp))
-                TimePicker(
-                    state = timePickerState,
-                    colors = TimePickerDefaults.colors(
-                        clockDialColor = scheme.surface,
-                        selectorColor = scheme.primary,
-                        timeSelectorSelectedContainerColor = scheme.primaryContainer,
-                        timeSelectorSelectedContentColor = scheme.onPrimaryContainer,
-                        timeSelectorUnselectedContainerColor = scheme.surface,
-                        timeSelectorUnselectedContentColor = scheme.onSurface,
-                    ),
-                )
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Button(
-                onClick = { onSleepDurationMs(selectedMs) },
-                enabled = selectedMs > 0L,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(if (sleepState.active) "Restart $selectedLabel" else "Start $selectedLabel")
-            }
-            if (sleepState.active) {
-                OutlinedButton(
-                    onClick = onCancelSleep,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Cancel")
-                }
-            }
-        }
-
-        Spacer(Modifier.height(18.dp))
-        FilterChip(
-            selected = crossfade.enabled,
-            onClick = { onCrossfade(!crossfade.enabled) },
-            label = { Text(if (crossfade.enabled) "Crossfade on" else "Crossfade") },
-            modifier = Modifier.align(Alignment.Start),
-        )
     }
 }
 
