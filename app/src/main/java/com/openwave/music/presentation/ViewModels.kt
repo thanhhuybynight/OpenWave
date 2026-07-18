@@ -8,7 +8,6 @@ import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.PlayEvent
 import com.openwave.music.core.domain.SearchBatch
 import com.openwave.music.core.domain.SleepTimerState
-import com.openwave.music.core.domain.StreamQuality
 import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.UnifiedTrack
 import com.openwave.music.core.domain.VoteStats
@@ -21,7 +20,6 @@ import com.openwave.music.features.LibraryRepository
 import com.openwave.music.features.OfflineRepository
 import com.openwave.music.features.ScrobbleRepository
 import com.openwave.music.features.SleepTimer
-import com.openwave.music.features.StreamQualitySelector
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
@@ -47,7 +45,6 @@ class PlayerViewModel @Inject constructor(
     private val offline: OfflineRepository,
     private val sleepTimer: SleepTimer,
     private val crossfade: CrossfadeController,
-    private val qualitySelector: StreamQualitySelector,
     private val radio: RadioQueueManager,
     coordinator: PlaybackCoordinator,
 ) : ViewModel() {
@@ -60,9 +57,6 @@ class PlayerViewModel @Inject constructor(
     val stationActive: StateFlow<Boolean> = radio.stationActive
     val stationLabel: StateFlow<String?> = radio.stationLabel
     val stationBuilding: StateFlow<Boolean> = radio.isBuilding
-
-    private val _quality = MutableStateFlow(qualitySelector.preference.preferred)
-    val quality: StateFlow<StreamQuality> = _quality.asStateFlow()
 
     private val _playError = MutableStateFlow<String?>(null)
     val playError: StateFlow<String?> = _playError.asStateFlow()
@@ -91,8 +85,10 @@ class PlayerViewModel @Inject constructor(
 
     fun setAutoContinue(enabled: Boolean) = radio.setAutoContinue(enabled)
 
-    fun startSleepTimer(minutes: Int) {
-        sleepTimer.start(minutes * 60_000L)
+    /** Start sleep timer for [durationMs] (custom duration from clock picker). */
+    fun startSleepTimer(durationMs: Long) {
+        if (durationMs <= 0L) return
+        sleepTimer.start(durationMs)
     }
 
     fun cancelSleepTimer() = sleepTimer.cancel()
@@ -101,11 +97,6 @@ class PlayerViewModel @Inject constructor(
         crossfade.update(
             CrossfadeSettings(enabled = enabled, durationMs = durationSec * 1000),
         )
-    }
-
-    fun setQuality(q: StreamQuality) {
-        qualitySelector.preference = qualitySelector.preference.copy(preferred = q)
-        _quality.value = q
     }
 
     fun togglePlayPause() = player.togglePlayPause()

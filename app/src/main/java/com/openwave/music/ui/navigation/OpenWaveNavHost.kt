@@ -64,7 +64,6 @@ fun OpenWaveNavHost(
     val playError by playerVm.playError.collectAsStateWithLifecycle()
     val sleepState by playerVm.sleepState.collectAsStateWithLifecycle()
     val crossfade by playerVm.crossfadeSettings.collectAsStateWithLifecycle()
-    val quality by playerVm.quality.collectAsStateWithLifecycle()
     val autoContinue by playerVm.autoContinue.collectAsStateWithLifecycle()
     val stationActive by playerVm.stationActive.collectAsStateWithLifecycle()
     val stationLabel by playerVm.stationLabel.collectAsStateWithLifecycle()
@@ -99,10 +98,8 @@ fun OpenWaveNavHost(
             voteLabel = voteLabel,
             sleepState = sleepState,
             crossfade = crossfade,
-            quality = quality,
-            onSleepMinutes = playerVm::startSleepTimer,
+            onSleepDurationMs = playerVm::startSleepTimer,
             onCancelSleep = playerVm::cancelSleepTimer,
-            onQuality = playerVm::setQuality,
             onCrossfade = playerVm::setCrossfade,
             modifier = Modifier.fillMaxSize(),
         )

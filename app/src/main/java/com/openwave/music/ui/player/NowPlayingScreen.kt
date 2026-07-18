@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.Radio
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
@@ -48,10 +49,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.TimePickerDefaults
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -65,6 +70,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -76,7 +82,6 @@ import com.openwave.music.core.domain.PlaybackProgress
 import com.openwave.music.core.domain.PlaybackState
 import com.openwave.music.core.domain.PlayerSnapshot
 import com.openwave.music.core.domain.SleepTimerState
-import com.openwave.music.core.domain.StreamQuality
 import com.openwave.music.core.domain.Track
 import com.openwave.music.ui.theme.OpenWaveTheme
 import java.util.Locale
@@ -111,10 +116,8 @@ fun NowPlayingScreen(
     voteLabel: String? = null,
     sleepState: SleepTimerState = SleepTimerState(),
     crossfade: CrossfadeSettings = CrossfadeSettings(),
-    quality: StreamQuality = StreamQuality.AUTO,
-    onSleepMinutes: (Int) -> Unit = {},
+    onSleepDurationMs: (Long) -> Unit = {},
     onCancelSleep: () -> Unit = {},
-    onQuality: (StreamQuality) -> Unit = {},
     onCrossfade: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -307,14 +310,12 @@ fun NowPlayingScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            // Player tools (sleep / quality / crossfade) — live in the controller, not Home
+            // Player tools (sleep clock / crossfade) — live in the controller, not Home
             PlayerToolsSection(
                 sleepState = sleepState,
-                quality = quality,
                 crossfade = crossfade,
-                onSleepMinutes = onSleepMinutes,
+                onSleepDurationMs = onSleepDurationMs,
                 onCancelSleep = onCancelSleep,
-                onQuality = onQuality,
                 onCrossfade = onCrossfade,
             )
 
@@ -414,92 +415,157 @@ private fun StationSection(
 @Composable
 private fun PlayerToolsSection(
     sleepState: SleepTimerState,
-    quality: StreamQuality,
     crossfade: CrossfadeSettings,
-    onSleepMinutes: (Int) -> Unit,
+    onSleepDurationMs: (Long) -> Unit,
     onCancelSleep: () -> Unit,
-    onQuality: (StreamQuality) -> Unit,
     onCrossfade: (Boolean) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    // Duration picker: hour hand = hours (0–23), minute hand = minutes (0–59)
+    val timePickerState = rememberTimePickerState(
+        initialHour = 0,
+        initialMinute = 15,
+        is24Hour = true,
+    )
+    val selectedMs = (timePickerState.hour * 3_600_000L) + (timePickerState.minute * 60_000L)
+    val selectedLabel = formatDurationHm(timePickerState.hour, timePickerState.minute)
+
     Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.Start,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "Player tools",
+            text = "Sleep timer",
             style = MaterialTheme.typography.titleMedium,
             color = scheme.onSurface,
+            modifier = Modifier.fillMaxWidth(),
         )
-        Spacer(Modifier.height(10.dp))
-
+        Spacer(Modifier.height(4.dp))
         Text(
-            text = "Sleep timer",
-            style = MaterialTheme.typography.labelLarge,
+            text = "Spin the clock to set how long until playback pauses.",
+            style = MaterialTheme.typography.bodySmall,
             color = scheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
         )
-        Spacer(Modifier.height(6.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Spacer(Modifier.height(12.dp))
+
+        if (sleepState.active) {
+            // Live countdown — clock-face style remaining
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                color = scheme.primaryContainer,
+                tonalElevation = 1.dp,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 20.dp, horizontal = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = "Pausing in",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = scheme.onPrimaryContainer,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = formatRemain(sleepState.remainingMs),
+                        style = MaterialTheme.typography.displaySmall,
+                        color = scheme.onPrimaryContainer,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedButton(onClick = onCancelSleep) {
+                        Text("Cancel timer")
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = "Set a new time to restart",
+                style = MaterialTheme.typography.labelMedium,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+
+        // Material You clock dial (hours + minutes)
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = scheme.surfaceVariant.copy(alpha = 0.45f),
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            listOf(5, 15, 30, 45, 60).forEach { min ->
-                AssistChip(
-                    onClick = { onSleepMinutes(min) },
-                    label = { Text("${min}m") },
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp, horizontal = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = selectedLabel,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = scheme.primary,
                 )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "hours  ·  minutes",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                TimePicker(
+                    state = timePickerState,
+                    colors = TimePickerDefaults.colors(
+                        clockDialColor = scheme.surface,
+                        selectorColor = scheme.primary,
+                        timeSelectorSelectedContainerColor = scheme.primaryContainer,
+                        timeSelectorSelectedContentColor = scheme.onPrimaryContainer,
+                        timeSelectorUnselectedContainerColor = scheme.surface,
+                        timeSelectorUnselectedContentColor = scheme.onSurface,
+                    ),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Button(
+                onClick = { onSleepDurationMs(selectedMs) },
+                enabled = selectedMs > 0L,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(if (sleepState.active) "Restart $selectedLabel" else "Start $selectedLabel")
             }
             if (sleepState.active) {
-                AssistChip(
+                OutlinedButton(
                     onClick = onCancelSleep,
-                    label = { Text("Cancel ${formatRemain(sleepState.remainingMs)}") },
-                )
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Cancel")
+                }
             }
         }
 
-        Spacer(Modifier.height(14.dp))
-        Text(
-            text = "Stream quality",
-            style = MaterialTheme.typography.labelLarge,
-            color = scheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(6.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            StreamQuality.entries.forEach { q ->
-                FilterChip(
-                    selected = quality == q,
-                    onClick = { onQuality(q) },
-                    label = {
-                        Text(
-                            when (q) {
-                                StreamQuality.AUTO -> "Auto"
-                                StreamQuality.HIGH -> "High"
-                                StreamQuality.MAX -> "Max 256k"
-                            },
-                        )
-                    },
-                )
-            }
-            FilterChip(
-                selected = crossfade.enabled,
-                onClick = { onCrossfade(!crossfade.enabled) },
-                label = { Text(if (crossfade.enabled) "Crossfade on" else "Crossfade") },
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = "Max 256 kbps needs optional YTM Premium. Guest uses best free format.",
-            style = MaterialTheme.typography.labelSmall,
-            color = scheme.onSurfaceVariant,
+        Spacer(Modifier.height(18.dp))
+        FilterChip(
+            selected = crossfade.enabled,
+            onClick = { onCrossfade(!crossfade.enabled) },
+            label = { Text(if (crossfade.enabled) "Crossfade on" else "Crossfade") },
+            modifier = Modifier.align(Alignment.Start),
         )
     }
+}
+
+private fun formatDurationHm(hours: Int, minutes: Int): String = when {
+    hours <= 0 && minutes <= 0 -> "0 min"
+    hours <= 0 -> "$minutes min"
+    minutes <= 0 -> if (hours == 1) "1 hr" else "$hours hr"
+    else -> "${hours}h ${minutes}m"
 }
 
 @Composable
@@ -774,9 +840,15 @@ private fun formatMs(ms: Long): String {
 }
 
 private fun formatRemain(ms: Long): String {
-    val m = TimeUnit.MILLISECONDS.toMinutes(ms)
-    val s = TimeUnit.MILLISECONDS.toSeconds(ms) % 60
-    return String.format(Locale.US, "%d:%02d", m, s)
+    val totalSec = TimeUnit.MILLISECONDS.toSeconds(ms.coerceAtLeast(0L))
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return if (h > 0) {
+        String.format(Locale.US, "%d:%02d:%02d", h, m, s)
+    } else {
+        String.format(Locale.US, "%d:%02d", m, s)
+    }
 }
 
 @Preview(showBackground = true, name = "Now Playing")
