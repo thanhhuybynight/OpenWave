@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,6 +60,7 @@ import java.util.Locale
 fun ProfileScreen(
     onPlayTrack: (Track) -> Unit,
     onArtistClick: (name: String) -> Unit,
+    onOpenSettings: () -> Unit = {},
     vm: ProfileViewModel = hiltViewModel(),
     modifier: Modifier = Modifier,
 ) {
@@ -80,11 +82,27 @@ fun ProfileScreen(
         contentPadding = PaddingValues(bottom = 100.dp),
     ) {
         item {
-            Text(
-                text = "Profile",
-                style = MaterialTheme.typography.displayLarge,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Profile",
+                    style = MaterialTheme.typography.displayLarge,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 12.dp),
+                )
+                IconButton(onClick = onOpenSettings) {
+                    Icon(
+                        Icons.Outlined.Settings,
+                        contentDescription = "Cài đặt",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
         }
 
         item {

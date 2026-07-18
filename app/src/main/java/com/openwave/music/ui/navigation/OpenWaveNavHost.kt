@@ -44,6 +44,7 @@ import com.openwave.music.ui.player.MiniPlayerBar
 import com.openwave.music.ui.player.NowPlayingScreen
 import com.openwave.music.ui.profile.ProfileScreen
 import com.openwave.music.ui.search.SearchScreen
+import com.openwave.music.ui.settings.SettingsScreen
 
 private enum class RootDest(
     val route: String,
@@ -103,7 +104,8 @@ fun OpenWaveNavHost(
     }
 
     val onArtistRoute = currentRoute?.startsWith("artist") == true
-    val showBottomBar = !onArtistRoute
+    val onSettingsRoute = currentRoute == "settings"
+    val showBottomBar = !onArtistRoute && !onSettingsRoute
 
     if (showFullPlayer) {
         NowPlayingScreen(
@@ -208,6 +210,14 @@ fun OpenWaveNavHost(
                         onArtistClick = { name ->
                             navController.navigate(artistRoute(name = name))
                         },
+                        onOpenSettings = {
+                            navController.navigate("settings")
+                        },
+                    )
+                }
+                composable("settings") {
+                    SettingsScreen(
+                        onBack = { navController.popBackStack() },
                     )
                 }
                 composable(
