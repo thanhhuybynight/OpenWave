@@ -42,10 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import com.openwave.music.core.domain.Artist
 import com.openwave.music.core.domain.BrowseItem
-import com.openwave.music.core.domain.BrowseShelf
-import com.openwave.music.core.domain.HomeFeed
 import com.openwave.music.core.domain.Track
 import com.openwave.music.presentation.HomeViewModel
 import java.util.Locale
@@ -53,7 +50,7 @@ import java.util.Locale
 @Composable
 fun HomeScreen(
     onPlayTrack: (Track) -> Unit = {},
-    onArtistClick: (Artist) -> Unit = {},
+    onArtistClick: (BrowseItem.ArtistItem) -> Unit = {},
     onAddToPlaylist: (Track) -> Unit = {},
     vm: HomeViewModel = hiltViewModel(),
     modifier: Modifier = Modifier,
@@ -405,7 +402,7 @@ private fun RankedTrackRow(
 @Composable
 private fun ArtistRow(
     items: List<BrowseItem.ArtistItem>,
-    onClick: (Artist) -> Unit,
+    onClick: (BrowseItem.ArtistItem) -> Unit,
 ) {
     LazyRow(
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
@@ -414,7 +411,7 @@ private fun ArtistRow(
         items(items, key = { it.id }) { item ->
             ArtistAvatar(
                 item = item,
-                onClick = { onClick(item.artist) },
+                onClick = { onClick(item) },
             )
         }
     }

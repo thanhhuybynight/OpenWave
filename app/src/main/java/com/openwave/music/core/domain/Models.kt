@@ -28,6 +28,22 @@ data class Album(
     val source: MusicSource,
     val coverUrl: String? = null,
     val year: Int? = null,
+    /** Epoch ms of release (or best approximation) for newest-first sorting. */
+    val releasedAtMs: Long? = null,
+    val sourceUri: String? = null,
+    val trackCount: Long? = null,
+)
+
+/** Full artist page payload (YTM). */
+data class ArtistPage(
+    val artist: Artist,
+    val channelId: String? = null,
+    val description: String? = null,
+    val subscriberCount: Long? = null,
+    /** Top songs by listen count (max 5). */
+    val highlights: List<Track> = emptyList(),
+    /** Albums newest release first. */
+    val albums: List<Album> = emptyList(),
 )
 
 /**

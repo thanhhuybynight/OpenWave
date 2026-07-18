@@ -1,5 +1,6 @@
 package com.openwave.music.ui.navigation
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -25,13 +26,16 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.openwave.music.core.domain.Track
 import com.openwave.music.presentation.LibraryViewModel
 import com.openwave.music.presentation.PlayerViewModel
+import com.openwave.music.ui.artist.ArtistScreen
 import com.openwave.music.ui.home.HomeScreen
 import com.openwave.music.ui.library.AddToPlaylistDialog
 import com.openwave.music.ui.library.LibraryScreen
@@ -47,6 +51,24 @@ private enum class RootDest(
     Home("home", "Home", Icons.Outlined.Home),
     Search("search", "Search", Icons.Outlined.Search),
     Library("library", "Library", Icons.Outlined.LibraryMusic),
+}
+
+private const val ArtistRoute =
+    "artist?name={name}&id={id}&avatar={avatar}&channel={channel}"
+
+private fun artistRoute(
+    name: String,
+    id: String = "",
+    avatar: String? = null,
+    channel: String? = null,
+): String {
+    fun e(s: String) = Uri.encode(s)
+    return buildString {
+        append("artist?name=").append(e(name))
+        append("&id=").append(e(id))
+        append("&avatar=").append(e(avatar.orEmpty()))
+        append("&channel=").append(e(channel.orEmpty()))
+    }
 }
 
 @Composable
@@ -77,6 +99,9 @@ fun OpenWaveNavHost(
         "RYD  +${v.likes}  −${v.dislikes}"
     }
 
+    val onArtistRoute = currentRoute?.startsWith("artist") == true
+    val showBottomBar = !onArtistRoute
+
     if (showFullPlayer) {
         NowPlayingScreen(
             snapshot = snapshot,
@@ -103,22 +128,24 @@ fun OpenWaveNavHost(
 
     Scaffold(
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                RootDest.entries.forEach { dest ->
-                    NavigationBarItem(
-                        selected = currentRoute == dest.route,
-                        onClick = {
-                            navController.navigate(dest.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+            if (showBottomBar) {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                    RootDest.entries.forEach { dest ->
+                        NavigationBarItem(
+                            selected = currentRoute == dest.route,
+                            onClick = {
+                                navController.navigate(dest.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        icon = { Icon(dest.icon, contentDescription = dest.label) },
-                        label = { Text(dest.label) },
-                    )
+                            },
+                            icon = { Icon(dest.icon, contentDescription = dest.label) },
+                            label = { Text(dest.label) },
+                        )
+                    }
                 }
             }
         },
@@ -136,7 +163,16 @@ fun OpenWaveNavHost(
                 composable(RootDest.Home.route) {
                     HomeScreen(
                         onPlayTrack = { playerVm.playTrack(it) },
-                        onArtistClick = { artist -> playerVm.playArtist(artist.name) },
+                        onArtistClick = { item ->
+                            navController.navigate(
+                                artistRoute(
+                                    name = item.title,
+                                    id = item.id,
+                                    avatar = item.coverUrl ?: item.artist.imageUrl,
+                                    channel = item.channelId,
+                                ),
+                            )
+                        },
                         onAddToPlaylist = { addTrack = it },
                     )
                 }
@@ -160,6 +196,33 @@ fun OpenWaveNavHost(
                         onPlayTrack = { playerVm.playTrack(it) },
                         onPlayQueue = { tracks, index -> playerVm.playQueue(tracks, index) },
                         vm = libraryVm,
+                    )
+                }
+                composable(
+                    route = ArtistRoute,
+                    arguments = listOf(
+                        navArgument("name") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                        navArgument("id") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                        navArgument("avatar") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                        navArgument("channel") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                    ),
+                ) {
+                    ArtistScreen(
+                        onBack = { navController.popBackStack() },
+                        onPlayTrack = { playerVm.playTrack(it) },
+                        onPlayQueue = { tracks, index -> playerVm.playQueue(tracks, index) },
                     )
                 }
             }
