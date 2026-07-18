@@ -3,6 +3,7 @@ package com.openwave.music.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openwave.music.core.domain.FastMusicCatalog
+import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.PlayEvent
 import com.openwave.music.core.domain.SearchBatch
 import com.openwave.music.core.domain.Track
@@ -43,7 +44,17 @@ class PlayerViewModel @Inject constructor(
     val snapshot = player.snapshot
     val votes: StateFlow<VoteStats?> = coordinator.votes
 
+    private val _playError = MutableStateFlow<String?>(null)
+    val playError: StateFlow<String?> = _playError.asStateFlow()
+
+    private val _isResolving = MutableStateFlow(false)
+    val isResolving: StateFlow<Boolean> = _isResolving.asStateFlow()
+
     fun connect() = player.connect()
+
+    fun clearPlayError() {
+        _playError.value = null
+    }
 
     fun togglePlayPause() = player.togglePlayPause()
 
@@ -54,8 +65,7 @@ class PlayerViewModel @Inject constructor(
     fun skipPrevious() = player.skipPrevious()
 
     fun toggleShuffle() {
-        val on = !(snapshot.value.isShuffle)
-        player.setShuffle(on)
+        player.setShuffle(!snapshot.value.isShuffle)
     }
 
     fun cycleRepeat() = player.cycleRepeat()
@@ -69,10 +79,19 @@ class PlayerViewModel @Inject constructor(
 
     fun playTrack(track: Track, alternates: List<Track> = emptyList()) {
         viewModelScope.launch {
-            runCatching {
-                // Offline first
+            _playError.value = null
+            _isResolving.value = true
+            try {
+                if (!player.awaitReady()) {
+                    _playError.value = "Player not ready. Try again."
+                    return@launch
+                }
                 val local = offline.localStreamPath(track.id)
-                val url = local ?: catalog.resolveStreamFast(track, alternates).url
+                val url = if (local != null) {
+                    if (local.startsWith("/")) "file://$local" else local
+                } else {
+                    catalog.resolveStreamFast(track, alternates).url
+                }
                 player.play(track, url, newQueue = listOf(track) + alternates)
                 scrobble.onTrackStarted(track)
                 library.recordPlay(
@@ -87,6 +106,10 @@ class PlayerViewModel @Inject constructor(
                         completed = false,
                     ),
                 )
+            } catch (t: Throwable) {
+                _playError.value = t.message?.take(120) ?: "Could not play track"
+            } finally {
+                _isResolving.value = false
             }
         }
     }
@@ -95,22 +118,35 @@ class PlayerViewModel @Inject constructor(
         playTrack(hit.track, hit.alternates)
     }
 
-    /** Resolve and play an entire list (queue). */
     fun playQueue(tracks: List<Track>, startIndex: Int = 0) {
         if (tracks.isEmpty()) return
         viewModelScope.launch {
-            runCatching {
+            _playError.value = null
+            _isResolving.value = true
+            try {
+                if (!player.awaitReady()) {
+                    _playError.value = "Player not ready"
+                    return@launch
+                }
                 val resolved = coroutineScope {
                     tracks.map { t ->
                         async {
                             val local = offline.localStreamPath(t.id)
-                            val url = local ?: catalog.resolveStreamFast(t).url
+                            val url = if (local != null) {
+                                if (local.startsWith("/")) "file://$local" else local
+                            } else {
+                                catalog.resolveStreamFast(t).url
+                            }
                             t to url
                         }
                     }.awaitAll()
                 }
                 player.playResolved(resolved, startIndex, tracks)
                 tracks.getOrNull(startIndex)?.let { scrobble.onTrackStarted(it) }
+            } catch (t: Throwable) {
+                _playError.value = t.message?.take(120) ?: "Queue failed"
+            } finally {
+                _isResolving.value = false
             }
         }
     }
@@ -140,21 +176,27 @@ class SearchViewModel @Inject constructor(
     private val _batch = MutableStateFlow(SearchBatch(query = ""))
     val batch: StateFlow<SearchBatch> = _batch.asStateFlow()
 
+    /** null = all free sources */
+    private val _sourceFilter = MutableStateFlow<Set<MusicSource>?>(null)
+    val sourceFilter: StateFlow<Set<MusicSource>?> = _sourceFilter.asStateFlow()
+
     private var searchJob: Job? = null
 
     init {
         viewModelScope.launch {
-            _query
-                .debounce(280)
-                .distinctUntilChanged()
-                .collectLatest { q ->
+            // Re-run when either query or filter changes
+            kotlinx.coroutines.flow.combine(
+                _query.debounce(320).distinctUntilChanged(),
+                _sourceFilter,
+            ) { q, filter -> q to filter }
+                .collectLatest { (q, filter) ->
                     searchJob?.cancel()
                     if (q.isBlank()) {
                         _batch.value = SearchBatch(query = q, isComplete = true)
                         return@collectLatest
                     }
                     searchJob = launch {
-                        catalog.searchProgressive(q).collect { _batch.value = it }
+                        catalog.searchProgressive(q, filter).collect { _batch.value = it }
                     }
                 }
         }
@@ -162,5 +204,19 @@ class SearchViewModel @Inject constructor(
 
     fun onQueryChange(value: String) {
         _query.value = value
+    }
+
+    fun setSourceFilter(sources: Set<MusicSource>?) {
+        _sourceFilter.value = sources
+    }
+
+    fun toggleSource(source: MusicSource) {
+        val cur = _sourceFilter.value
+        _sourceFilter.value = when {
+            cur == null -> setOf(source)
+            source in cur && cur.size == 1 -> null // back to all
+            source in cur -> (cur - source).ifEmpty { null }
+            else -> cur + source
+        }
     }
 }

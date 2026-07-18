@@ -60,6 +60,8 @@ fun OpenWaveNavHost(
     val snapshot by playerVm.snapshot.collectAsStateWithLifecycle()
     val votes by playerVm.votes.collectAsStateWithLifecycle()
     val playlists by libraryVm.playlists.collectAsStateWithLifecycle()
+    val isResolving by playerVm.isResolving.collectAsStateWithLifecycle()
+    val playError by playerVm.playError.collectAsStateWithLifecycle()
     var showFullPlayer by remember { mutableStateOf(false) }
     var addTrack by remember { mutableStateOf<Track?>(null) }
 
@@ -132,6 +134,9 @@ fun OpenWaveNavHost(
                         onPlayUnified = { hit -> playerVm.playUnified(hit) },
                         onPrefetch = { track -> playerVm.prefetch(track) },
                         onAddToPlaylist = { addTrack = it },
+                        isResolving = isResolving,
+                        playError = playError,
+                        onClearError = playerVm::clearPlayError,
                     )
                 }
                 composable(RootDest.Library.route) {

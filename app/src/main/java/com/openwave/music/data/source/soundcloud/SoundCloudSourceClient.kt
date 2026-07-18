@@ -1,5 +1,6 @@
 package com.openwave.music.data.source.soundcloud
 
+import android.util.Log
 import com.openwave.music.core.domain.Artist
 import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.MusicSourceClient
@@ -18,8 +19,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * SoundCloud public API v2 with rotated [client_id] scraped from the web app.
- * Progressive HTTP stream preferred; HLS left for Media3 HLS module.
+ * SoundCloud public API v2 with [client_id] discovery from web assets.
  */
 @Singleton
 class SoundCloudSourceClient @Inject constructor(
@@ -33,21 +33,27 @@ class SoundCloudSourceClient @Inject constructor(
 
     override suspend fun search(query: String, limit: Int): SearchResult =
         withContext(Dispatchers.IO) {
+            val q = query.trim()
+            if (q.isEmpty()) return@withContext SearchResult()
             runCatching {
-                val cid = ensureClientId() ?: return@runCatching null
+                val cid = ensureClientId() ?: error("no client_id")
                 val url =
-                    "https://api-v2.soundcloud.com/search/tracks?q=${query.encode()}&client_id=$cid&limit=$limit&offset=0"
-                val body = get(url) ?: return@runCatching null
-                val arr = JSONObject(body).optJSONArray("collection") ?: JSONArray()
+                    "https://api-v2.soundcloud.com/search/tracks?q=${q.encode()}" +
+                        "&client_id=$cid&limit=$limit&offset=0&app_locale=en"
+                val body = get(url) ?: error("empty search body")
+                val root = JSONObject(body)
+                val arr = root.optJSONArray("collection") ?: JSONArray()
                 val tracks = buildList {
                     for (i in 0 until arr.length()) {
                         parseTrack(arr.getJSONObject(i))?.let { add(it) }
                     }
                 }
                 SearchResult(tracks = tracks)
-            }.getOrNull()?.takeIf { it.tracks.isNotEmpty() }
+            }.onFailure { Log.w(TAG, "SC search: ${it.message}") }
+                .getOrNull()
+                ?.takeIf { it.tracks.isNotEmpty() }
                 ?: SearchResult(
-                    tracks = DemoCatalog.search(query, limit).tracks
+                    tracks = DemoCatalog.search(q, limit).tracks
                         .filter { it.source == MusicSource.SOUNDCLOUD },
                 )
         }
@@ -64,48 +70,58 @@ class SoundCloudSourceClient @Inject constructor(
     }
 
     override suspend fun getStream(track: Track): StreamInfo? = withContext(Dispatchers.IO) {
-        if (!track.streamUrl.isNullOrBlank() && track.streamUrl!!.startsWith("http")) {
-            // Demo progressive URL
-            if (!track.streamUrl!!.contains("soundcloud")) {
-                return@withContext StreamInfo(url = track.streamUrl!!, mimeType = "audio/mpeg")
-            }
+        if (!track.streamUrl.isNullOrBlank() &&
+            track.streamUrl!!.startsWith("http") &&
+            !track.streamUrl!!.contains("api-v2.soundcloud") &&
+            !track.streamUrl!!.contains("soundcloud.com")
+        ) {
+            // Demo / non-SC progressive URL
+            return@withContext StreamInfo(url = track.streamUrl!!, mimeType = "audio/mpeg")
         }
         runCatching {
-            val cid = ensureClientId() ?: return@runCatching null
+            val cid = ensureClientId() ?: error("no client_id")
             val numeric = track.id.removePrefix("sc:")
             val meta = get("https://api-v2.soundcloud.com/tracks/$numeric?client_id=$cid")
-                ?: return@runCatching null
+                ?: error("no track meta")
             val o = JSONObject(meta)
-            val media = o.optJSONObject("media") ?: return@runCatching null
-            val transcodings = media.optJSONArray("transcodings") ?: return@runCatching null
+            // Some tracks expose stream_url directly (legacy)
+            o.optString("stream_url").takeIf { it.startsWith("http") }?.let { su ->
+                val final = resolveRedirect("$su?client_id=$cid") ?: su
+                return@runCatching StreamInfo(
+                    url = final,
+                    mimeType = "audio/mpeg",
+                    qualityLabel = "sq",
+                    expiresAtEpochMs = System.currentTimeMillis() + 10 * 60_000L,
+                )
+            }
+            val media = o.optJSONObject("media") ?: error("no media")
+            val transcodings = media.optJSONArray("transcodings") ?: error("no transcodings")
 
-            // Prefer progressive MPEG
             var progressive: JSONObject? = null
             var hls: JSONObject? = null
             for (i in 0 until transcodings.length()) {
                 val t = transcodings.getJSONObject(i)
                 val protocol = t.optJSONObject("format")?.optString("protocol").orEmpty()
-                val mime = t.optJSONObject("format")?.optString("mime_type").orEmpty()
                 when {
                     protocol == "progressive" -> progressive = t
                     protocol.contains("hls") -> hls = t
-                    mime.contains("mpeg") && progressive == null -> progressive = t
                 }
             }
-            val chosen = progressive ?: hls ?: return@runCatching null
+            val chosen = progressive ?: hls ?: error("no usable transcoding")
             val streamApi = chosen.optString("url")
-            if (streamApi.isBlank()) return@runCatching null
+            if (streamApi.isBlank()) error("empty transcoding url")
             val sep = if (streamApi.contains("?")) "&" else "?"
-            val resolved = get("$streamApi${sep}client_id=$cid") ?: return@runCatching null
+            val resolved = get("$streamApi${sep}client_id=$cid") ?: error("resolve failed")
             val finalUrl = JSONObject(resolved).optString("url")
-            if (finalUrl.isBlank()) return@runCatching null
+            if (finalUrl.isBlank()) error("empty final url")
             StreamInfo(
                 url = finalUrl,
                 mimeType = chosen.optJSONObject("format")?.optString("mime_type"),
                 qualityLabel = chosen.optString("quality").ifBlank { "sq" },
                 expiresAtEpochMs = System.currentTimeMillis() + 15 * 60_000L,
             )
-        }.getOrNull()
+        }.onFailure { Log.w(TAG, "SC stream: ${it.message}") }
+            .getOrNull()
             ?: track.streamUrl?.let { StreamInfo(url = it, mimeType = "audio/mpeg") }
     }
 
@@ -142,42 +158,70 @@ class SoundCloudSourceClient @Inject constructor(
             clientId.get()?.let { return it }
             val discovered = discoverClientId()
             if (discovered != null) clientId.set(discovered)
+            else Log.w(TAG, "client_id discovery failed")
             return discovered
         }
     }
 
-    /**
-     * Pull client_id from SoundCloud web JS bundles (common FOSS technique).
-     */
     private fun discoverClientId(): String? {
         val home = get("https://soundcloud.com") ?: return null
         val scriptUrls = Regex("""src="(https://a-v2\.sndcdn\.com/assets/[^"]+\.js)"""")
             .findAll(home)
             .map { it.groupValues[1] }
             .toList()
-            .takeLast(8) // client_id often in later bundles
-        for (script in scriptUrls.asReversed()) {
+        // Scan from the end (client_id often in later chunks)
+        for (script in scriptUrls.asReversed().take(12)) {
             val js = get(script) ?: continue
-            val m = Regex("""client_id["']?\s*:\s*["']([a-zA-Z0-9]{32})["']""")
-                .find(js)
-                ?: Regex("""client_id=([a-zA-Z0-9]{32})""").find(js)
-            if (m != null) return m.groupValues[1]
+            val patterns = listOf(
+                Regex("""client_id["']?\s*:\s*["']([a-zA-Z0-9]{32})["']"""),
+                Regex("""client_id=([a-zA-Z0-9]{32})"""),
+                Regex("""["']clientId["']\s*:\s*["']([a-zA-Z0-9]{32})["']"""),
+                Regex("""\bclient_id["']?\s*,\s*["']([a-zA-Z0-9]{32})["']"""),
+            )
+            for (p in patterns) {
+                p.find(js)?.groupValues?.getOrNull(1)?.let { return it }
+            }
         }
         return null
+    }
+
+    private fun resolveRedirect(url: String): String? {
+        val req = Request.Builder()
+            .url(url)
+            .header("User-Agent", UA)
+            .get()
+            .build()
+        return http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) null else resp.request.url.toString()
+        }
     }
 
     private fun get(url: String): String? {
         val req = Request.Builder()
             .url(url)
-            .header("User-Agent", "Mozilla/5.0 (Android) OpenWave/0.1")
+            .header("User-Agent", UA)
             .header("Accept", "application/json, text/javascript, */*; q=0.01")
+            .header("Origin", "https://soundcloud.com")
+            .header("Referer", "https://soundcloud.com")
             .get()
             .build()
         return http.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) null else resp.body?.string()
+            if (!resp.isSuccessful) {
+                Log.w(TAG, "HTTP ${resp.code} for $url")
+                null
+            } else {
+                resp.body?.string()
+            }
         }
     }
 
     private fun String.encode(): String =
         java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
+
+    companion object {
+        private const val TAG = "SoundCloudSource"
+        private const val UA =
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+    }
 }

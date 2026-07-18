@@ -6,26 +6,29 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.openwave.music.MainActivity
 import com.openwave.music.OpenWaveApp
 import dagger.hilt.android.AndroidEntryPoint
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
+import javax.inject.Inject
 
 /**
- * Foreground media playback — **screen off / other apps / lock screen**.
- *
- * Speed-oriented ExoPlayer load control:
- * - Smaller min buffer → audio starts sooner after URL resolve
- * - Still enough max buffer for Wi‑Fi handoffs
- *
- * Media3 MediaSessionService already promotes a media notification FGS
- * when playback is active (no GMS).
+ * Foreground media playback with OkHttp data source (YouTube CDN headers).
  */
+@UnstableApi
 @AndroidEntryPoint
 class PlaybackService : MediaSessionService() {
+
+    @Inject lateinit var okHttp: OkHttpClient
 
     private var mediaSession: MediaSession? = null
     private var player: ExoPlayer? = null
@@ -33,24 +36,42 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
 
-        // Aggressive for "tap → hear sound" (milliseconds matter after URL is ready)
         val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                /* minBufferMs = */ 1_500,
-                /* maxBufferMs = */ 30_000,
-                /* bufferForPlaybackMs = */ 750,
-                /* bufferForPlaybackAfterRebufferMs = */ 1_500,
-            )
+            .setBufferDurationsMs(1_500, 40_000, 750, 1_500)
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
+        // YouTube / SoundCloud progressive streams often need browser-like headers
+        val streamHttp = okHttp.newBuilder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+
+        val httpFactory = OkHttpDataSource.Factory(streamHttp)
+            .setUserAgent(STREAM_USER_AGENT)
+            .setDefaultRequestProperties(
+                mapOf(
+                    "Accept" to "*/*",
+                    "Accept-Language" to "en-US,en;q=0.9",
+                    "Origin" to "https://www.youtube.com",
+                    "Referer" to "https://www.youtube.com",
+                ),
+            )
+
+        val dataSourceFactory = DefaultDataSource.Factory(this, httpFactory)
+        val mediaSourceFactory = DefaultMediaSourceFactory(this)
+            .setDataSourceFactory(dataSourceFactory)
+
         val exo = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                     .setUsage(C.USAGE_MEDIA)
                     .build(),
-                /* handleAudioFocus = */ true,
+                true,
             )
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
@@ -58,10 +79,7 @@ class PlaybackService : MediaSessionService() {
             .setSeekBackIncrementMs(10_000)
             .setSeekForwardIncrementMs(10_000)
             .build()
-            .also {
-                // Keep a bit of queue pre-buffer when items are already in the playlist
-                it.pauseAtEndOfMediaItems = false
-            }
+            .also { it.pauseAtEndOfMediaItems = false }
 
         player = exo
 
@@ -83,10 +101,6 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
         mediaSession
 
-    /**
-     * User swiped app away: keep playing if media is active (hub app behavior).
-     * Only stop when idle / ended.
-     */
     override fun onTaskRemoved(rootIntent: Intent?) {
         val p = player
         if (p == null || !p.playWhenReady || p.mediaItemCount == 0 ||
@@ -94,7 +108,6 @@ class PlaybackService : MediaSessionService() {
         ) {
             stopSelf()
         }
-        // else: continue as FGS with media notification
     }
 
     override fun onDestroy() {
@@ -110,6 +123,9 @@ class PlaybackService : MediaSessionService() {
     companion object {
         const val SESSION_ID = "openwave_session"
         const val CHANNEL_ID = OpenWaveApp.PLAYBACK_CHANNEL_ID
+        const val STREAM_USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
     }
 }
 
@@ -130,12 +146,6 @@ object MediaItemFactory {
 
         val requestMetadata = MediaItem.RequestMetadata.Builder()
             .setMediaUri(android.net.Uri.parse(streamUrl))
-            .apply {
-                if (httpHeaders.isNotEmpty()) {
-                    // ExoPlayer reads custom headers via MediaItem extras / datasource factory
-                    // in a later phase; URI alone works for public progressive/HLS.
-                }
-            }
             .build()
 
         return MediaItem.Builder()

@@ -2,7 +2,6 @@ package com.openwave.music.core.player
 
 import android.content.ComponentName
 import android.content.Context
-import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -14,6 +13,7 @@ import com.openwave.music.core.domain.PlayerSnapshot
 import com.openwave.music.core.domain.RepeatMode
 import com.openwave.music.core.domain.Track
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,12 +21,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * UI-facing façade over Media3 [MediaController].
- * Supports queue, shuffle, and repeat.
+ * [awaitReady] must succeed before play on cold start.
  */
 @Singleton
 class PlayerController @Inject constructor(
@@ -34,13 +35,13 @@ class PlayerController @Inject constructor(
 ) {
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
+    private val ready = CompletableDeferred<MediaController>()
 
     private val _snapshot = MutableStateFlow(PlayerSnapshot())
     val snapshot: StateFlow<PlayerSnapshot> = _snapshot.asStateFlow()
 
     private var currentTrack: Track? = null
     private var queue: List<Track> = emptyList()
-    /** mediaId → track for multi-item queues */
     private val trackById = linkedMapOf<String, Track>()
 
     fun connect() {
@@ -53,10 +54,27 @@ class PlayerController @Inject constructor(
         controllerFuture = future
         future.addListener(
             {
-                controller = runCatching { future.get() }.getOrNull()?.also { bind(it) }
+                val c = runCatching { future.get() }.getOrNull()
+                if (c != null) {
+                    controller = c
+                    bind(c)
+                    if (!ready.isCompleted) ready.complete(c)
+                } else if (!ready.isCompleted) {
+                    ready.completeExceptionally(IllegalStateException("MediaController failed"))
+                }
             },
             MoreExecutors.directExecutor(),
         )
+    }
+
+    /** Wait until MediaController is bound (or timeout). */
+    suspend fun awaitReady(timeoutMs: Long = 8_000L): Boolean {
+        connect()
+        controller?.let { return true }
+        return withTimeoutOrNull(timeoutMs) {
+            ready.await()
+            true
+        } == true
     }
 
     fun release() {
@@ -73,9 +91,6 @@ class PlayerController @Inject constructor(
         )
     }
 
-    /**
-     * Play a resolved queue. [resolved] pairs must have stream URLs ready.
-     */
     fun playResolved(
         tracks: List<Pair<Track, String>>,
         startIndex: Int = 0,

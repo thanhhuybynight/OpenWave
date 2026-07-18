@@ -37,14 +37,15 @@ data class SearchBatch(
 
 /** Latency / reliability knobs for the aggregator. */
 data class AggregatorConfig(
-    /** Hard cap per source search; late results dropped from this wave. */
-    val searchTimeoutMs: Long = 2_500L,
+    /** Hard cap per source search; NewPipe cold start needs >2.5s. */
+    val searchTimeoutMs: Long = 12_000L,
     /** Soft budget for "first paint" — UI may show earlier via Flow. */
     val firstPaintBudgetMs: Long = 400L,
-    val streamResolveTimeoutMs: Long = 4_000L,
+    /** Stream resolve (cipher / player endpoint) can be slow. */
+    val streamResolveTimeoutMs: Long = 15_000L,
     /** How long to keep resolved stream URLs in RAM. */
     val streamCacheTtlMs: Long = 25 * 60_000L,
-    val maxResultsPerSource: Int = 15,
+    val maxResultsPerSource: Int = 20,
     /**
      * Prefer sources that historically resolve streams faster.
      * Lower index = higher priority when racing / ranking.

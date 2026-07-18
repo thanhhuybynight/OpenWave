@@ -40,4 +40,8 @@ class NewPipeBootstrap @Inject constructor(
         // init in constructor; method for call sites that want a no-op touch
         ready.get()
     }
+
+    companion object {
+        val USER_AGENT get() = NewPipeDownloader.USER_AGENT
+    }
 }
