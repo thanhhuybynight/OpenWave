@@ -169,17 +169,12 @@ class RoomLibraryRepository @Inject constructor(
         // Pull recent track rows then expand multi-artist credits into separate chips.
         events.recentTracks((limit * 4).coerceAtLeast(40)).map { rows ->
             data class Agg(
-                var lastPlayedAtMs: Long,
-                var playCount: Int,
-                var coverUrl: String?,
-            )
-            data class Agg2(
                 var name: String,
                 var channelId: String?,
                 var lastPlayedAtMs: Long,
                 var playCount: Int,
             )
-            val map = linkedMapOf<String, Agg2>()
+            val map = linkedMapOf<String, Agg>()
             for (row in rows) {
                 val credits = com.openwave.music.core.domain.ArtistNameSplitter
                     .splitDetailed(row.artist)
@@ -194,7 +189,7 @@ class RoomLibraryRepository @Inject constructor(
                     val key = c.channelId?.lowercase() ?: c.name.lowercase()
                     val cur = map[key]
                     if (cur == null) {
-                        map[key] = Agg2(
+                        map[key] = Agg(
                             name = c.name,
                             channelId = c.channelId,
                             lastPlayedAtMs = row.lastPlayedAtMs,
