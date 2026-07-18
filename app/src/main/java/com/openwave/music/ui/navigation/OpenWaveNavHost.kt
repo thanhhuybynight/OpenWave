@@ -62,6 +62,9 @@ fun OpenWaveNavHost(
     val playlists by libraryVm.playlists.collectAsStateWithLifecycle()
     val isResolving by playerVm.isResolving.collectAsStateWithLifecycle()
     val playError by playerVm.playError.collectAsStateWithLifecycle()
+    val sleepState by playerVm.sleepState.collectAsStateWithLifecycle()
+    val crossfade by playerVm.crossfadeSettings.collectAsStateWithLifecycle()
+    val quality by playerVm.quality.collectAsStateWithLifecycle()
     var showFullPlayer by remember { mutableStateOf(false) }
     var addTrack by remember { mutableStateOf<Track?>(null) }
 
@@ -84,6 +87,13 @@ fun OpenWaveNavHost(
             onShuffle = playerVm::toggleShuffle,
             onRepeat = playerVm::cycleRepeat,
             voteLabel = voteLabel,
+            sleepState = sleepState,
+            crossfade = crossfade,
+            quality = quality,
+            onSleepMinutes = playerVm::startSleepTimer,
+            onCancelSleep = playerVm::cancelSleepTimer,
+            onQuality = playerVm::setQuality,
+            onCrossfade = playerVm::setCrossfade,
             modifier = Modifier.fillMaxSize(),
         )
         return

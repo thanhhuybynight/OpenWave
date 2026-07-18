@@ -1,13 +1,11 @@
 package com.openwave.music.ui.home
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -15,13 +13,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -35,11 +30,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.openwave.music.core.domain.BrowseItem
 import com.openwave.music.core.domain.BrowseShelf
-import com.openwave.music.core.domain.StreamQuality
 import com.openwave.music.core.domain.Track
 import com.openwave.music.presentation.HomeViewModel
-import java.util.Locale
-import java.util.concurrent.TimeUnit
 
 @Composable
 fun HomeScreen(
@@ -50,8 +42,6 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
 ) {
     val shelves by vm.shelves.collectAsStateWithLifecycle()
-    val sleep by vm.sleepState.collectAsStateWithLifecycle()
-    val crossfade by vm.crossfadeSettings.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = modifier
@@ -80,71 +70,6 @@ fun HomeScreen(
             }
         }
 
-        // Quick tools: sleep / quality / crossfade
-        item {
-            Text(
-                text = "Player tools",
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-            )
-            Row(
-                modifier = Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                listOf(5, 15, 30, 45, 60).forEach { min ->
-                    AssistChip(
-                        onClick = { vm.startSleepTimer(min) },
-                        label = { Text("${min}m sleep") },
-                    )
-                }
-                if (sleep.active) {
-                    AssistChip(
-                        onClick = { vm.cancelSleepTimer() },
-                        label = {
-                            Text("Cancel ${formatRemain(sleep.remainingMs)}")
-                        },
-                    )
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                StreamQuality.entries.forEach { q ->
-                    FilterChip(
-                        selected = false,
-                        onClick = { vm.setQuality(q) },
-                        label = {
-                            Text(
-                                when (q) {
-                                    StreamQuality.AUTO -> "Quality Auto"
-                                    StreamQuality.HIGH -> "High"
-                                    StreamQuality.MAX -> "Max 256k*"
-                                },
-                            )
-                        },
-                    )
-                }
-                FilterChip(
-                    selected = crossfade.enabled,
-                    onClick = { vm.setCrossfade(!crossfade.enabled) },
-                    label = { Text(if (crossfade.enabled) "Crossfade on" else "Crossfade") },
-                )
-            }
-            Text(
-                text = "* Max 256 kbps needs optional YTM Premium session. Guest uses best free format.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
-            )
-        }
-
-        // Browse shelves (Home / Charts / Podcasts / Moods)
         items(shelves, key = { it.id }) { shelf ->
             ShelfSection(
                 shelf = shelf,
@@ -152,10 +77,6 @@ fun HomeScreen(
                 onDownload = { vm.download(it) },
                 onAddToPlaylist = onAddToPlaylist,
             )
-        }
-
-        item {
-            FeatureRoadmapCard(Modifier.padding(24.dp))
         }
     }
 }
@@ -266,39 +187,4 @@ private fun CategoryChip(title: String, subtitle: String?) {
             }
         }
     }
-}
-
-@Composable
-private fun FeatureRoadmapCard(modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-        ),
-        shape = RoundedCornerShape(20.dp),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text("SimpMusic-parity roadmap", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
-            val lines = listOf(
-                "Ready: Sleep timer, quality prefs, crossfade flag, offline queue, scrobble, SB/RYD clients, Auto shell",
-                "Next: YTM browse + stream, real downloads, playlist UI, video/Canvas/AI",
-                "Optional login: Premium 256kbps, library sync, artist notifications",
-            )
-            lines.forEach {
-                Text(
-                    "· $it",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.padding(vertical = 2.dp),
-                )
-            }
-        }
-    }
-}
-
-private fun formatRemain(ms: Long): String {
-    val m = TimeUnit.MILLISECONDS.toMinutes(ms)
-    val s = TimeUnit.MILLISECONDS.toSeconds(ms) % 60
-    return String.format(Locale.US, "%d:%02d", m, s)
 }

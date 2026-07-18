@@ -2,19 +2,25 @@ package com.openwave.music.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.openwave.music.core.domain.CrossfadeSettings
 import com.openwave.music.core.domain.FastMusicCatalog
 import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.PlayEvent
 import com.openwave.music.core.domain.SearchBatch
+import com.openwave.music.core.domain.SleepTimerState
+import com.openwave.music.core.domain.StreamQuality
 import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.UnifiedTrack
 import com.openwave.music.core.domain.VoteStats
 import com.openwave.music.core.player.PlaybackCoordinator
 import com.openwave.music.core.player.PlayerController
 import com.openwave.music.data.source.DemoSourceClient
+import com.openwave.music.features.CrossfadeController
 import com.openwave.music.features.LibraryRepository
 import com.openwave.music.features.OfflineRepository
 import com.openwave.music.features.ScrobbleRepository
+import com.openwave.music.features.SleepTimer
+import com.openwave.music.features.StreamQualitySelector
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
@@ -38,11 +44,19 @@ class PlayerViewModel @Inject constructor(
     private val scrobble: ScrobbleRepository,
     private val library: LibraryRepository,
     private val offline: OfflineRepository,
+    private val sleepTimer: SleepTimer,
+    private val crossfade: CrossfadeController,
+    private val qualitySelector: StreamQualitySelector,
     coordinator: PlaybackCoordinator,
 ) : ViewModel() {
 
     val snapshot = player.snapshot
     val votes: StateFlow<VoteStats?> = coordinator.votes
+    val sleepState: StateFlow<SleepTimerState> = sleepTimer.state
+    val crossfadeSettings: StateFlow<CrossfadeSettings> = crossfade.settings
+
+    private val _quality = MutableStateFlow(qualitySelector.preference.preferred)
+    val quality: StateFlow<StreamQuality> = _quality.asStateFlow()
 
     private val _playError = MutableStateFlow<String?>(null)
     val playError: StateFlow<String?> = _playError.asStateFlow()
@@ -54,6 +68,23 @@ class PlayerViewModel @Inject constructor(
 
     fun clearPlayError() {
         _playError.value = null
+    }
+
+    fun startSleepTimer(minutes: Int) {
+        sleepTimer.start(minutes * 60_000L)
+    }
+
+    fun cancelSleepTimer() = sleepTimer.cancel()
+
+    fun setCrossfade(enabled: Boolean, durationSec: Int = 8) {
+        crossfade.update(
+            CrossfadeSettings(enabled = enabled, durationMs = durationSec * 1000),
+        )
+    }
+
+    fun setQuality(q: StreamQuality) {
+        qualitySelector.preference = qualitySelector.preference.copy(preferred = q)
+        _quality.value = q
     }
 
     fun togglePlayPause() = player.togglePlayPause()

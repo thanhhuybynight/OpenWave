@@ -8,6 +8,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -23,8 +24,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -34,7 +37,9 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Shuffle
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -61,10 +66,13 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.openwave.music.core.domain.Artist
+import com.openwave.music.core.domain.CrossfadeSettings
 import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.PlaybackProgress
 import com.openwave.music.core.domain.PlaybackState
 import com.openwave.music.core.domain.PlayerSnapshot
+import com.openwave.music.core.domain.SleepTimerState
+import com.openwave.music.core.domain.StreamQuality
 import com.openwave.music.core.domain.Track
 import com.openwave.music.ui.theme.OpenWaveTheme
 import java.util.Locale
@@ -91,6 +99,13 @@ fun NowPlayingScreen(
     onShuffle: () -> Unit = {},
     onRepeat: () -> Unit = {},
     voteLabel: String? = null,
+    sleepState: SleepTimerState = SleepTimerState(),
+    crossfade: CrossfadeSettings = CrossfadeSettings(),
+    quality: StreamQuality = StreamQuality.AUTO,
+    onSleepMinutes: (Int) -> Unit = {},
+    onCancelSleep: () -> Unit = {},
+    onQuality: (StreamQuality) -> Unit = {},
+    onCrossfade: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val track = snapshot.track
@@ -113,6 +128,7 @@ fun NowPlayingScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -204,13 +220,11 @@ fun NowPlayingScreen(
                 onSkipPrevious = onSkipPrevious,
             )
 
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(12.dp))
 
-            // Secondary row
+            // Secondary transport: shuffle / repeat
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -233,15 +247,120 @@ fun NowPlayingScreen(
                     )
                 }
             }
+
+            Spacer(Modifier.height(20.dp))
+
+            // Player tools (sleep / quality / crossfade) — live in the controller, not Home
+            PlayerToolsSection(
+                sleepState = sleepState,
+                quality = quality,
+                crossfade = crossfade,
+                onSleepMinutes = onSleepMinutes,
+                onCancelSleep = onCancelSleep,
+                onQuality = onQuality,
+                onCrossfade = onCrossfade,
+            )
+
+            Spacer(Modifier.height(32.dp))
         }
 
-        // Soft bottom scrim for depth when content is long
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(48.dp)
+                .height(24.dp)
                 .background(scrim),
+        )
+    }
+}
+
+@Composable
+private fun PlayerToolsSection(
+    sleepState: SleepTimerState,
+    quality: StreamQuality,
+    crossfade: CrossfadeSettings,
+    onSleepMinutes: (Int) -> Unit,
+    onCancelSleep: () -> Unit,
+    onQuality: (StreamQuality) -> Unit,
+    onCrossfade: (Boolean) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.Start,
+    ) {
+        Text(
+            text = "Player tools",
+            style = MaterialTheme.typography.titleMedium,
+            color = scheme.onSurface,
+        )
+        Spacer(Modifier.height(10.dp))
+
+        Text(
+            text = "Sleep timer",
+            style = MaterialTheme.typography.labelLarge,
+            color = scheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            listOf(5, 15, 30, 45, 60).forEach { min ->
+                AssistChip(
+                    onClick = { onSleepMinutes(min) },
+                    label = { Text("${min}m") },
+                )
+            }
+            if (sleepState.active) {
+                AssistChip(
+                    onClick = onCancelSleep,
+                    label = { Text("Cancel ${formatRemain(sleepState.remainingMs)}") },
+                )
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+        Text(
+            text = "Stream quality",
+            style = MaterialTheme.typography.labelLarge,
+            color = scheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            StreamQuality.entries.forEach { q ->
+                FilterChip(
+                    selected = quality == q,
+                    onClick = { onQuality(q) },
+                    label = {
+                        Text(
+                            when (q) {
+                                StreamQuality.AUTO -> "Auto"
+                                StreamQuality.HIGH -> "High"
+                                StreamQuality.MAX -> "Max 256k"
+                            },
+                        )
+                    },
+                )
+            }
+            FilterChip(
+                selected = crossfade.enabled,
+                onClick = { onCrossfade(!crossfade.enabled) },
+                label = { Text(if (crossfade.enabled) "Crossfade on" else "Crossfade") },
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "Max 256 kbps needs optional YTM Premium. Guest uses best free format.",
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
         )
     }
 }
@@ -515,6 +634,12 @@ private fun formatMs(ms: Long): String {
     val minutes = TimeUnit.MILLISECONDS.toMinutes(ms)
     val seconds = TimeUnit.MILLISECONDS.toSeconds(ms) % 60
     return String.format(Locale.US, "%d:%02d", minutes, seconds)
+}
+
+private fun formatRemain(ms: Long): String {
+    val m = TimeUnit.MILLISECONDS.toMinutes(ms)
+    val s = TimeUnit.MILLISECONDS.toSeconds(ms) % 60
+    return String.format(Locale.US, "%d:%02d", m, s)
 }
 
 @Preview(showBackground = true, name = "Now Playing")
