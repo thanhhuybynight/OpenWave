@@ -143,7 +143,9 @@ dependencies {
 
     // —— FOSS extractors (Phase 2) ——
     // NewPipeExtractor: YouTube / YT Music stream + search (GPL-3.0)
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.5")
+    // v0.24.5 is dead against current YouTube ("page needs to be reloaded").
+    // v0.26.3+ required for working StreamInfo / signature handling.
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
     // SoundCloud uses OkHttp public API (client_id discovery)
 
     // —— Testing ——

@@ -70,15 +70,23 @@ class YouTubeMusicSourceClient @Inject constructor(
                 qualityLabel = "128kbps",
             )
         }
+        // Don't treat googlevideo-less demo/watch URLs as already resolved
+        if (!track.streamUrl.isNullOrBlank() &&
+            track.streamUrl!!.contains("googlevideo.com")
+        ) {
+            return@withContext StreamInfo(
+                url = track.streamUrl!!,
+                mimeType = "audio/mp4",
+                qualityLabel = "cached",
+            )
+        }
         val videoId = normalizeId(track.id)
-        runCatching {
+        try {
             streamResolver.resolveAudio(videoId)
-                ?: error("resolver returned null for $videoId")
-        }.onFailure { Log.w(TAG, "YT stream failed for $videoId: ${it.message}") }
-            .getOrNull()
-            ?: track.streamUrl?.takeIf { it.startsWith("http") }?.let {
-                StreamInfo(url = it, mimeType = "audio/mpeg", qualityLabel = "128kbps")
-            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "YT stream failed for $videoId: ${t.message}", t)
+            throw t
+        }
     }
 
     private fun searchNewPipe(query: String, limit: Int): SearchResult {

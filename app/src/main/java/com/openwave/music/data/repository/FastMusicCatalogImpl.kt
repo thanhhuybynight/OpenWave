@@ -172,29 +172,39 @@ class FastMusicCatalogImpl @Inject constructor(
                 "Metadata-only hits need a free alternate (YTM / SoundCloud)."
         }
 
-        // 1) Cache hits
+        // 1) Cache hits only (never not invent URLs from sourceUri / watch pages)
         for (c in candidates) {
             val key = StreamUrlCache.key(c.source.name, c.id)
             streamCache.get(key)?.let { return@withContext it }
-            c.streamUrl?.let { url ->
-                val info = StreamInfo(url = url)
+            // Demo / already-resolved progressive only
+            val direct = c.streamUrl
+            if (!direct.isNullOrBlank() && isDirectMediaUrl(direct)) {
+                val info = StreamInfo(url = direct)
                 streamCache.put(key, info, config.streamCacheTtlMs)
                 return@withContext info
             }
         }
 
-        // 2) Race: first successful resolve wins; cancel the rest
+        // 2) Resolve via sources; keep last error for UI
+        val errors = mutableListOf<String>()
         val raced: StreamInfo? = coroutineScope {
             val winnerCh = Channel<Pair<Track, StreamInfo>>(capacity = 1)
             val jobs = candidates.map { c ->
                 launch {
                     val client = clientFor(c.source) ?: return@launch
-                    val info = runCatching {
-                        withTimeoutOrNull(config.streamResolveTimeoutMs) {
+                    try {
+                        val info = withTimeoutOrNull(config.streamResolveTimeoutMs) {
                             client.getStream(c)
                         }
-                    }.getOrNull() ?: return@launch
-                    winnerCh.trySend(c to info)
+                        if (info != null && info.url.isNotBlank()) {
+                            winnerCh.trySend(c to info)
+                        } else {
+                            errors += "${c.source}: empty stream"
+                        }
+                    } catch (t: Throwable) {
+                        if (t is CancellationException) throw t
+                        errors += "${c.source}: ${t.message ?: t.javaClass.simpleName}"
+                    }
                 }
             }
 
@@ -217,7 +227,24 @@ class FastMusicCatalogImpl @Inject constructor(
             }
         }
 
-        raced ?: error("Could not resolve stream for \"${track.title}\" on any free source")
+        raced ?: error(
+            "Could not resolve stream for \"${track.title}\". " +
+                errors.joinToString(" | ").ifBlank { "all sources failed" },
+        )
+    }
+
+    private fun isDirectMediaUrl(url: String): Boolean {
+        if (!url.startsWith("http")) return false
+        if (url.contains("youtube.com/watch") || url.contains("music.youtube.com/watch")) {
+            return false
+        }
+        return url.contains("googlevideo.com") ||
+            url.contains("sndcdn.com") ||
+            url.contains("soundcloud.com") ||
+            url.contains("storage.googleapis.com") ||
+            url.contains(".mp3") ||
+            url.contains(".m4a") ||
+            url.contains(".webm")
     }
 
     override suspend fun prefetchStream(track: Track) {
