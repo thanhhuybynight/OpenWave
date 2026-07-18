@@ -118,19 +118,6 @@ interface PlayEventDao {
     )
     fun recentTracks(limit: Int = 50): Flow<List<RecentTrackRow>>
 
-    /** Distinct artists by last listen time (most recent first). */
-    @Query(
-        """
-        SELECT artist as name, MAX(playedAtMs) as lastPlayedAtMs,
-               COUNT(*) as playCount, MAX(coverUrl) as coverUrl
-        FROM play_events
-        WHERE artist IS NOT NULL AND artist != ''
-        GROUP BY artist
-        ORDER BY lastPlayedAtMs DESC
-        LIMIT :limit
-        """,
-    )
-    fun recentArtists(limit: Int = 50): Flow<List<RecentArtistRow>>
 }
 
 data class TrackStatsRow(
@@ -153,12 +140,6 @@ data class RecentTrackRow(
     val coverUrl: String? = null,
 )
 
-data class RecentArtistRow(
-    val name: String,
-    val lastPlayedAtMs: Long,
-    val playCount: Int,
-    val coverUrl: String? = null,
-)
 
 @Dao
 interface PlaylistDao {

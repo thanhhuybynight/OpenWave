@@ -165,60 +165,6 @@ class RoomLibraryRepository @Inject constructor(
             }
         }
 
-    override fun recentArtists(limit: Int): Flow<List<com.openwave.music.core.domain.RecentArtist>> =
-        // Pull recent track rows then expand multi-artist credits into separate chips.
-        events.recentTracks((limit * 4).coerceAtLeast(40)).map { rows ->
-            data class Agg(
-                var name: String,
-                var channelId: String?,
-                var lastPlayedAtMs: Long,
-                var playCount: Int,
-            )
-            val map = linkedMapOf<String, Agg>()
-            for (row in rows) {
-                val credits = com.openwave.music.core.domain.ArtistNameSplitter
-                    .splitDetailed(row.artist)
-                    .ifEmpty {
-                        listOfNotNull(
-                            row.artist.takeIf { it.isNotBlank() }?.let {
-                                com.openwave.music.core.domain.ArtistNameSplitter.Credit(it)
-                            },
-                        )
-                    }
-                for (c in credits) {
-                    val key = c.channelId?.lowercase() ?: c.name.lowercase()
-                    val cur = map[key]
-                    if (cur == null) {
-                        map[key] = Agg(
-                            name = c.name,
-                            channelId = c.channelId,
-                            lastPlayedAtMs = row.lastPlayedAtMs,
-                            playCount = 1,
-                        )
-                    } else {
-                        cur.playCount += 1
-                        if (row.lastPlayedAtMs > cur.lastPlayedAtMs) {
-                            cur.lastPlayedAtMs = row.lastPlayedAtMs
-                            cur.name = c.name
-                            if (c.channelId != null) cur.channelId = c.channelId
-                        }
-                    }
-                }
-            }
-            map.values
-                .map {
-                    com.openwave.music.core.domain.RecentArtist(
-                        name = it.name,
-                        lastPlayedAtMs = it.lastPlayedAtMs,
-                        playCount = it.playCount,
-                        coverUrl = null,
-                        channelId = it.channelId,
-                    )
-                }
-                .sortedByDescending { it.lastPlayedAtMs }
-                .take(limit)
-        }
-
     override suspend fun recordPlay(event: PlayEvent) {
         events.insert(
             PlayEventEntity(

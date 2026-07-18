@@ -9,7 +9,6 @@ import com.openwave.music.core.domain.LocalPlaylist
 import com.openwave.music.core.domain.OfflineTrack
 import com.openwave.music.core.domain.PlayEvent
 import com.openwave.music.core.domain.QualityPreference
-import com.openwave.music.core.domain.RecentArtist
 import com.openwave.music.core.domain.RecentPlay
 import com.openwave.music.core.domain.SkipSegment
 import com.openwave.music.core.domain.SleepTimerState
@@ -53,8 +52,6 @@ interface LibraryRepository {
     fun stats(): Flow<List<TrackStats>>
     /** Unique tracks ordered by most recent listen first. */
     fun recentPlays(limit: Int = 50): Flow<List<RecentPlay>>
-    /** Unique artists ordered by most recent listen first. */
-    fun recentArtists(limit: Int = 50): Flow<List<RecentArtist>>
     suspend fun recordPlay(event: PlayEvent)
 }
 

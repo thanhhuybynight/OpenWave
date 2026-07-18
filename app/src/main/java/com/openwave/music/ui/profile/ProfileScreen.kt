@@ -17,9 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,7 +47,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import com.openwave.music.core.domain.RecentArtist
 import com.openwave.music.core.domain.RecentPlay
 import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.UserProfile
@@ -59,14 +56,12 @@ import java.util.Locale
 @Composable
 fun ProfileScreen(
     onPlayTrack: (Track) -> Unit,
-    onArtistClick: (name: String, channelId: String?) -> Unit,
     onOpenSettings: () -> Unit = {},
     vm: ProfileViewModel = hiltViewModel(),
     modifier: Modifier = Modifier,
 ) {
     val profile by vm.profile.collectAsStateWithLifecycle()
     val recentPlays by vm.recentPlays.collectAsStateWithLifecycle()
-    val recentArtists by vm.recentArtists.collectAsStateWithLifecycle()
     var showNameDialog by remember { mutableStateOf(false) }
 
     val pickImage = rememberLauncherForActivityResult(
@@ -116,34 +111,12 @@ fun ProfileScreen(
         item {
             SectionTitle("Vừa nghe")
         }
-        if (recentPlays.isEmpty()) {
-            // titles only — no empty copy
-        } else {
+        if (recentPlays.isNotEmpty()) {
             items(recentPlays, key = { "play-${it.trackId}-${it.lastPlayedAtMs}" }) { play ->
                 RecentTrackRow(
                     play = play,
                     onClick = { onPlayTrack(vm.toTrack(play)) },
                 )
-            }
-        }
-
-        item {
-            Spacer(Modifier.height(8.dp))
-            SectionTitle("Nghệ sĩ đã nghe")
-        }
-        if (recentArtists.isNotEmpty()) {
-            item {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    items(recentArtists, key = { "${it.channelId ?: ""}:${it.name}" }) { artist ->
-                        RecentArtistChip(
-                            artist = artist,
-                            onClick = { onArtistClick(artist.name, artist.channelId) },
-                        )
-                    }
-                }
             }
         }
     }
@@ -287,51 +260,6 @@ private fun RecentTrackRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
-        )
-    }
-}
-
-@Composable
-private fun RecentArtistChip(
-    artist: RecentArtist,
-    onClick: () -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .width(88.dp)
-            .clickable(onClick = onClick),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(72.dp)
-                .clip(CircleShape)
-                .background(scheme.primaryContainer),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (artist.coverUrl != null) {
-                AsyncImage(
-                    model = artist.coverUrl,
-                    contentDescription = artist.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Text(
-                    text = artist.name.take(1).uppercase(Locale.getDefault()),
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = scheme.onPrimaryContainer,
-                )
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = artist.name,
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            color = scheme.onSurface,
         )
     }
 }

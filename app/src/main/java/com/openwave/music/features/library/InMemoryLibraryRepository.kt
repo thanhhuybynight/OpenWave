@@ -102,47 +102,6 @@ class InMemoryLibraryRepository @Inject constructor() : LibraryRepository {
             .take(limit)
     }
 
-    override fun recentArtists(limit: Int) = events.map { list ->
-        data class Agg(var name: String, var channelId: String?, var last: Long, var count: Int)
-        val map = linkedMapOf<String, Agg>()
-        for (e in list) {
-            val credits = com.openwave.music.core.domain.ArtistNameSplitter.splitDetailed(e.artist)
-                .ifEmpty {
-                    listOfNotNull(
-                        e.artist.takeIf { it.isNotBlank() }?.let {
-                            com.openwave.music.core.domain.ArtistNameSplitter.Credit(it)
-                        },
-                    )
-                }
-            for (c in credits) {
-                val key = c.channelId?.lowercase() ?: c.name.lowercase()
-                val cur = map[key]
-                if (cur == null) {
-                    map[key] = Agg(c.name, c.channelId, e.playedAtMs, 1)
-                } else {
-                    cur.count++
-                    if (e.playedAtMs > cur.last) {
-                        cur.last = e.playedAtMs
-                        cur.name = c.name
-                        if (c.channelId != null) cur.channelId = c.channelId
-                    }
-                }
-            }
-        }
-        map.values
-            .map {
-                com.openwave.music.core.domain.RecentArtist(
-                    name = it.name,
-                    lastPlayedAtMs = it.last,
-                    playCount = it.count,
-                    coverUrl = null,
-                    channelId = it.channelId,
-                )
-            }
-            .sortedByDescending { it.lastPlayedAtMs }
-            .take(limit)
-    }
-
     override suspend fun recordPlay(event: PlayEvent) {
         events.update { listOf(event) + it }
     }

@@ -147,16 +147,6 @@ data class RecentPlay(
     val coverUrl: String? = null,
 )
 
-/** Recent unique artist listen (last play first). */
-data class RecentArtist(
-    val name: String,
-    val lastPlayedAtMs: Long,
-    val playCount: Int,
-    val coverUrl: String? = null,
-    /** YouTube channel id (UC…) when resolved for a separate artist profile. */
-    val channelId: String? = null,
-)
-
 data class UserProfile(
     val displayName: String = "Người dùng",
     val avatarUri: String? = null,
