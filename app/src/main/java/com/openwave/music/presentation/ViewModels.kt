@@ -172,6 +172,7 @@ class PlayerViewModel @Inject constructor(
                         durationMs = track.durationMs,
                         listenedMs = 0L,
                         completed = false,
+                        coverUrl = track.coverUrl,
                     ),
                 )
             } catch (t: Throwable) {

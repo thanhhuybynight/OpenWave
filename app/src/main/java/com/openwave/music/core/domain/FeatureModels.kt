@@ -123,6 +123,7 @@ data class PlayEvent(
     val durationMs: Long,
     val listenedMs: Long,
     val completed: Boolean,
+    val coverUrl: String? = null,
 )
 
 data class TrackStats(
@@ -132,6 +133,31 @@ data class TrackStats(
     val playCount: Int,
     val totalListenedMs: Long,
     val lastPlayedAtMs: Long,
+    val coverUrl: String? = null,
+    val source: MusicSource = MusicSource.UNKNOWN,
+)
+
+/** Recent unique track listen (last play first). */
+data class RecentPlay(
+    val trackId: String,
+    val title: String,
+    val artist: String,
+    val source: MusicSource,
+    val lastPlayedAtMs: Long,
+    val coverUrl: String? = null,
+)
+
+/** Recent unique artist listen (last play first). */
+data class RecentArtist(
+    val name: String,
+    val lastPlayedAtMs: Long,
+    val playCount: Int,
+    val coverUrl: String? = null,
+)
+
+data class UserProfile(
+    val displayName: String = "Người dùng",
+    val avatarUri: String? = null,
 )
 
 // ── Scrobble ────────────────────────────────────────────────────────────────

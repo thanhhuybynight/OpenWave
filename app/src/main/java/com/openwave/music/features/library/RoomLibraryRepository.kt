@@ -141,6 +141,38 @@ class RoomLibraryRepository @Inject constructor(
                     playCount = it.playCount,
                     totalListenedMs = it.totalListenedMs,
                     lastPlayedAtMs = it.lastPlayedAtMs,
+                    coverUrl = it.coverUrl,
+                    source = runCatching {
+                        com.openwave.music.core.domain.MusicSource.valueOf(it.source.orEmpty())
+                    }.getOrDefault(com.openwave.music.core.domain.MusicSource.UNKNOWN),
+                )
+            }
+        }
+
+    override fun recentPlays(limit: Int): Flow<List<com.openwave.music.core.domain.RecentPlay>> =
+        events.recentTracks(limit).map { rows ->
+            rows.map {
+                com.openwave.music.core.domain.RecentPlay(
+                    trackId = it.trackId,
+                    title = it.title,
+                    artist = it.artist,
+                    source = runCatching {
+                        com.openwave.music.core.domain.MusicSource.valueOf(it.source)
+                    }.getOrDefault(com.openwave.music.core.domain.MusicSource.UNKNOWN),
+                    lastPlayedAtMs = it.lastPlayedAtMs,
+                    coverUrl = it.coverUrl,
+                )
+            }
+        }
+
+    override fun recentArtists(limit: Int): Flow<List<com.openwave.music.core.domain.RecentArtist>> =
+        events.recentArtists(limit).map { rows ->
+            rows.map {
+                com.openwave.music.core.domain.RecentArtist(
+                    name = it.name,
+                    lastPlayedAtMs = it.lastPlayedAtMs,
+                    playCount = it.playCount,
+                    coverUrl = it.coverUrl,
                 )
             }
         }
@@ -156,6 +188,7 @@ class RoomLibraryRepository @Inject constructor(
                 durationMs = event.durationMs,
                 listenedMs = event.listenedMs,
                 completed = event.completed,
+                coverUrl = event.coverUrl,
             ),
         )
     }

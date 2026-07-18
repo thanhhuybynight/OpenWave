@@ -279,7 +279,7 @@ private fun SwipeRevealTrackRow(
                 },
             ) {
                 Icon(
-                    Icons.Outlined.QueueMusic,
+                    Icons.AutoMirrored.Outlined.QueueMusic,
                     contentDescription = "Thêm vào danh sách chờ",
                     tint = scheme.primary,
                 )

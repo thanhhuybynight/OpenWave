@@ -33,6 +33,7 @@ data class PlayEventEntity(
     val durationMs: Long,
     val listenedMs: Long,
     val completed: Boolean,
+    val coverUrl: String? = null,
 )
 
 @Entity(tableName = "playlists")
@@ -94,7 +95,8 @@ interface PlayEventDao {
     @Query(
         """
         SELECT trackId, title, artist, COUNT(*) as playCount,
-               SUM(listenedMs) as totalListenedMs, MAX(playedAtMs) as lastPlayedAtMs
+               SUM(listenedMs) as totalListenedMs, MAX(playedAtMs) as lastPlayedAtMs,
+               MAX(coverUrl) as coverUrl, MAX(source) as source
         FROM play_events
         GROUP BY trackId
         ORDER BY playCount DESC
@@ -102,6 +104,33 @@ interface PlayEventDao {
         """,
     )
     fun stats(limit: Int = 100): Flow<List<TrackStatsRow>>
+
+    /** Distinct tracks by last listen time (most recent first). */
+    @Query(
+        """
+        SELECT trackId, title, artist, source,
+               MAX(playedAtMs) as lastPlayedAtMs, MAX(coverUrl) as coverUrl
+        FROM play_events
+        GROUP BY trackId
+        ORDER BY lastPlayedAtMs DESC
+        LIMIT :limit
+        """,
+    )
+    fun recentTracks(limit: Int = 50): Flow<List<RecentTrackRow>>
+
+    /** Distinct artists by last listen time (most recent first). */
+    @Query(
+        """
+        SELECT artist as name, MAX(playedAtMs) as lastPlayedAtMs,
+               COUNT(*) as playCount, MAX(coverUrl) as coverUrl
+        FROM play_events
+        WHERE artist IS NOT NULL AND artist != ''
+        GROUP BY artist
+        ORDER BY lastPlayedAtMs DESC
+        LIMIT :limit
+        """,
+    )
+    fun recentArtists(limit: Int = 50): Flow<List<RecentArtistRow>>
 }
 
 data class TrackStatsRow(
@@ -111,6 +140,24 @@ data class TrackStatsRow(
     val playCount: Int,
     val totalListenedMs: Long,
     val lastPlayedAtMs: Long,
+    val coverUrl: String? = null,
+    val source: String? = null,
+)
+
+data class RecentTrackRow(
+    val trackId: String,
+    val title: String,
+    val artist: String,
+    val source: String,
+    val lastPlayedAtMs: Long,
+    val coverUrl: String? = null,
+)
+
+data class RecentArtistRow(
+    val name: String,
+    val lastPlayedAtMs: Long,
+    val playCount: Int,
+    val coverUrl: String? = null,
 )
 
 @Dao
@@ -169,7 +216,7 @@ interface DownloadDao {
         PlaylistTrackEntity::class,
         DownloadEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class OpenWaveDatabase : RoomDatabase() {

@@ -9,6 +9,8 @@ import com.openwave.music.core.domain.LocalPlaylist
 import com.openwave.music.core.domain.OfflineTrack
 import com.openwave.music.core.domain.PlayEvent
 import com.openwave.music.core.domain.QualityPreference
+import com.openwave.music.core.domain.RecentArtist
+import com.openwave.music.core.domain.RecentPlay
 import com.openwave.music.core.domain.SkipSegment
 import com.openwave.music.core.domain.SleepTimerState
 import com.openwave.music.core.domain.StreamInfo
@@ -16,6 +18,7 @@ import com.openwave.music.core.domain.StreamQuality
 import com.openwave.music.core.domain.SubtitleCue
 import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.TrackStats
+import com.openwave.music.core.domain.UserProfile
 import com.openwave.music.core.domain.VideoStream
 import com.openwave.music.core.domain.VoteStats
 import kotlinx.coroutines.flow.Flow
@@ -48,7 +51,17 @@ interface LibraryRepository {
     /** Optional: push/pull when YTM session present. */
     suspend fun syncWithYtm(): Result<Unit>
     fun stats(): Flow<List<TrackStats>>
+    /** Unique tracks ordered by most recent listen first. */
+    fun recentPlays(limit: Int = 50): Flow<List<RecentPlay>>
+    /** Unique artists ordered by most recent listen first. */
+    fun recentArtists(limit: Int = 50): Flow<List<RecentArtist>>
     suspend fun recordPlay(event: PlayEvent)
+}
+
+interface UserProfileRepository {
+    val profile: Flow<UserProfile>
+    suspend fun updateDisplayName(name: String)
+    suspend fun updateAvatarUri(uri: String?)
 }
 
 interface OfflineRepository {

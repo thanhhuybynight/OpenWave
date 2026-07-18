@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +42,7 @@ import com.openwave.music.ui.library.AddToPlaylistDialog
 import com.openwave.music.ui.library.LibraryScreen
 import com.openwave.music.ui.player.MiniPlayerBar
 import com.openwave.music.ui.player.NowPlayingScreen
+import com.openwave.music.ui.profile.ProfileScreen
 import com.openwave.music.ui.search.SearchScreen
 
 private enum class RootDest(
@@ -51,6 +53,7 @@ private enum class RootDest(
     Home("home", "Home", Icons.Outlined.Home),
     Search("search", "Search", Icons.Outlined.Search),
     Library("library", "Library", Icons.Outlined.LibraryMusic),
+    Profile("profile", "Profile", Icons.Outlined.Person),
 }
 
 private const val ArtistRoute =
@@ -197,6 +200,14 @@ fun OpenWaveNavHost(
                         onPlayTrack = { playerVm.playTrack(it) },
                         onPlayQueue = { tracks, index -> playerVm.playQueue(tracks, index) },
                         vm = libraryVm,
+                    )
+                }
+                composable(RootDest.Profile.route) {
+                    ProfileScreen(
+                        onPlayTrack = { playerVm.playTrack(it) },
+                        onArtistClick = { name ->
+                            navController.navigate(artistRoute(name = name))
+                        },
                     )
                 }
                 composable(

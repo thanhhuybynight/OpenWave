@@ -114,6 +114,7 @@ class PlaybackCoordinator @Inject constructor(
                 durationMs = track.durationMs,
                 listenedMs = listened,
                 completed = true,
+                coverUrl = track.coverUrl,
             ),
         )
         accumulatedListenMs = 0L

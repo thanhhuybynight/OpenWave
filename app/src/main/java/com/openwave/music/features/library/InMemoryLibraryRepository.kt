@@ -79,8 +79,42 @@ class InMemoryLibraryRepository @Inject constructor() : LibraryRepository {
                 playCount = plays.size,
                 totalListenedMs = plays.sumOf { it.listenedMs },
                 lastPlayedAtMs = plays.maxOf { it.playedAtMs },
+                coverUrl = first.coverUrl,
+                source = first.source,
             )
         }.sortedByDescending { it.playCount }
+    }
+
+    override fun recentPlays(limit: Int) = events.map { list ->
+        list.groupBy { it.trackId }
+            .map { (id, plays) ->
+                val last = plays.maxBy { it.playedAtMs }
+                com.openwave.music.core.domain.RecentPlay(
+                    trackId = id,
+                    title = last.title,
+                    artist = last.artist,
+                    source = last.source,
+                    lastPlayedAtMs = last.playedAtMs,
+                    coverUrl = last.coverUrl,
+                )
+            }
+            .sortedByDescending { it.lastPlayedAtMs }
+            .take(limit)
+    }
+
+    override fun recentArtists(limit: Int) = events.map { list ->
+        list.filter { it.artist.isNotBlank() }
+            .groupBy { it.artist }
+            .map { (name, plays) ->
+                com.openwave.music.core.domain.RecentArtist(
+                    name = name,
+                    lastPlayedAtMs = plays.maxOf { it.playedAtMs },
+                    playCount = plays.size,
+                    coverUrl = plays.maxBy { it.playedAtMs }.coverUrl,
+                )
+            }
+            .sortedByDescending { it.lastPlayedAtMs }
+            .take(limit)
     }
 
     override suspend fun recordPlay(event: PlayEvent) {

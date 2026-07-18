@@ -22,8 +22,10 @@ import com.openwave.music.features.ryd.ReturnYoutubeDislikeClientImpl
 import com.openwave.music.features.scrobble.RoomScrobbleRepository
 import com.openwave.music.features.sleeptimer.SleepTimerImpl
 import com.openwave.music.features.sponsorblock.SponsorBlockClientImpl
+import com.openwave.music.features.UserProfileRepository
 import com.openwave.music.features.artist.ArtistRepository
 import com.openwave.music.features.artist.YtmArtistRepository
+import com.openwave.music.features.profile.UserProfileRepositoryImpl
 import com.openwave.music.features.station.StationRepository
 import com.openwave.music.features.station.StationRepositoryImpl
 import com.openwave.music.features.stubs.StubAiSuggestionEngine
@@ -42,6 +44,9 @@ abstract class FeatureModule {
 
     @Binds @Singleton
     abstract fun artist(impl: YtmArtistRepository): ArtistRepository
+
+    @Binds @Singleton
+    abstract fun userProfile(impl: UserProfileRepositoryImpl): UserProfileRepository
 
     @Binds @Singleton
     abstract fun station(impl: StationRepositoryImpl): StationRepository
