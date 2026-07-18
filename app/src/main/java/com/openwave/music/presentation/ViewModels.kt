@@ -186,6 +186,37 @@ class PlayerViewModel @Inject constructor(
         playTrack(hit.track, hit.alternates)
     }
 
+    /** Append track to the end of the current Media3 queue (danh sách chờ). */
+    fun enqueueTrack(track: Track, alternates: List<Track> = emptyList()) {
+        viewModelScope.launch {
+            _playError.value = null
+            try {
+                if (!player.awaitReady()) {
+                    _playError.value = "Player not ready"
+                    return@launch
+                }
+                // Nothing playing yet → start playback instead of orphan queue
+                if (player.mediaItemCount() == 0 || snapshot.value.track == null) {
+                    playTrack(track, alternates)
+                    return@launch
+                }
+                val local = offline.localStreamPath(track.id)
+                val url = if (local != null) {
+                    if (local.startsWith("/")) "file://$local" else local
+                } else {
+                    catalog.resolveStreamFast(track, alternates).url
+                }
+                player.appendResolved(listOf(track to url), fullQueueTail = listOf(track))
+            } catch (t: Throwable) {
+                _playError.value = t.message?.take(120) ?: "Could not add to queue"
+            }
+        }
+    }
+
+    fun enqueueUnified(hit: UnifiedTrack) {
+        enqueueTrack(hit.track, hit.alternates)
+    }
+
     fun playQueue(tracks: List<Track>, startIndex: Int = 0) {
         if (tracks.isEmpty()) return
         viewModelScope.launch {

@@ -1,6 +1,10 @@
 package com.openwave.music.ui.search
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,9 +12,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -21,7 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,15 +37,21 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,8 +61,12 @@ import com.openwave.music.core.domain.SourcePolicy
 import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.UnifiedTrack
 import com.openwave.music.presentation.SearchViewModel
+import kotlinx.coroutines.launch
 import java.util.Locale
-import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
+
+/** Width of the reveal panel (queue + radio). Swipe content right to open. */
+private val RevealWidth = 128.dp
 
 @Composable
 fun SearchScreen(
@@ -58,6 +74,7 @@ fun SearchScreen(
     onPlayUnified: (UnifiedTrack) -> Unit = { onPlayTrack(it.track) },
     onPrefetch: (Track) -> Unit = {},
     onAddToPlaylist: (Track) -> Unit = {},
+    onAddToQueue: (Track) -> Unit = {},
     onStartStation: (Track) -> Unit = {},
     isResolving: Boolean = false,
     playError: String? = null,
@@ -100,7 +117,6 @@ fun SearchScreen(
             shape = MaterialTheme.shapes.large,
         )
 
-        // Source filters
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -130,7 +146,6 @@ fun SearchScreen(
             )
         }
 
-        // Status strip
         if (query.isNotBlank()) {
             Row(
                 modifier = Modifier
@@ -192,11 +207,12 @@ fun SearchScreen(
                         onPrefetch(hit.track)
                     }
                 }
-                UnifiedTrackRow(
+                SwipeRevealTrackRow(
                     hit = hit,
-                    onClick = { onPlayUnified(hit) },
-                    onAdd = { onAddToPlaylist(hit.track) },
+                    onPlay = { onPlayUnified(hit) },
+                    onQueue = { onAddToQueue(hit.track) },
                     onStation = { onStartStation(hit.track) },
+                    onAddPlaylist = { onAddToPlaylist(hit.track) },
                 )
             }
 
@@ -213,77 +229,155 @@ fun SearchScreen(
     }
 }
 
+/**
+ * Tap row → play. Swipe content to the right → reveal queue + radio (+ playlist).
+ */
 @Composable
-private fun UnifiedTrackRow(
+private fun SwipeRevealTrackRow(
     hit: UnifiedTrack,
-    onClick: () -> Unit,
-    onAdd: () -> Unit,
+    onPlay: () -> Unit,
+    onQueue: () -> Unit,
     onStation: () -> Unit,
+    onAddPlaylist: () -> Unit,
 ) {
     val track = hit.track
     val scheme = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 4.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .clip(RoundedCornerShape(12.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (track.coverUrl != null) {
-                AsyncImage(
-                    model = track.coverUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Text(
-                    track.title.take(1).uppercase(Locale.getDefault()),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = scheme.primary,
-                )
-            }
-        }
-        Spacer(Modifier.width(12.dp))
-        Text(
-            text = track.title,
-            style = MaterialTheme.typography.titleMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        IconButton(onClick = onClick) {
-            Icon(
-                Icons.Filled.PlayArrow,
-                contentDescription = "Play",
-                tint = scheme.primary,
-            )
-        }
-        IconButton(onClick = onStation) {
-            Icon(
-                Icons.Outlined.HourglassEmpty,
-                contentDescription = "Start station",
-                tint = scheme.onSurfaceVariant,
-            )
-        }
-        IconButton(onClick = onAdd) {
-            Icon(
-                Icons.AutoMirrored.Outlined.PlaylistAdd,
-                contentDescription = "Add to playlist",
-                tint = scheme.onSurfaceVariant,
+    val density = LocalDensity.current
+    val revealPx = with(density) { RevealWidth.toPx() }
+    val offsetX = remember(track.id) { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+
+    fun snap(open: Boolean) {
+        scope.launch {
+            offsetX.animateTo(
+                targetValue = if (open) revealPx else 0f,
+                animationSpec = spring(stiffness = 400f, dampingRatio = 0.85f),
             )
         }
     }
-}
 
-private fun formatDur(ms: Long): String {
-    val m = TimeUnit.MILLISECONDS.toMinutes(ms)
-    val s = TimeUnit.MILLISECONDS.toSeconds(ms) % 60
-    return String.format(Locale.US, "%d:%02d", m, s)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(72.dp)
+            .clip(RoundedCornerShape(12.dp)),
+    ) {
+        // Actions under the row (left) — revealed when content slides right
+        Row(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .fillMaxHeight()
+                .width(RevealWidth)
+                .background(scheme.surfaceVariant),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            IconButton(
+                onClick = {
+                    onQueue()
+                    snap(false)
+                },
+            ) {
+                Icon(
+                    Icons.Outlined.QueueMusic,
+                    contentDescription = "Thêm vào danh sách chờ",
+                    tint = scheme.primary,
+                )
+            }
+            IconButton(
+                onClick = {
+                    onStation()
+                    snap(false)
+                },
+            ) {
+                Icon(
+                    Icons.Outlined.HourglassEmpty,
+                    contentDescription = "Station / radio",
+                    tint = scheme.primary,
+                )
+            }
+            IconButton(
+                onClick = {
+                    onAddPlaylist()
+                    snap(false)
+                },
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.PlaylistAdd,
+                    contentDescription = "Thêm vào playlist",
+                    tint = scheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        // Foreground content
+        Surface(
+            color = scheme.surface,
+            modifier = Modifier
+                .fillMaxSize()
+                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                .pointerInput(track.id) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            val open = offsetX.value > revealPx * 0.4f
+                            snap(open)
+                        },
+                        onDragCancel = {
+                            snap(offsetX.value > revealPx * 0.4f)
+                        },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            val next = (offsetX.value + dragAmount).coerceIn(0f, revealPx)
+                            scope.launch { offsetX.snapTo(next) }
+                        },
+                    )
+                }
+                .clickable {
+                    if (offsetX.value > revealPx * 0.2f) {
+                        snap(false)
+                    } else {
+                        onPlay()
+                    }
+                },
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (track.coverUrl != null) {
+                        AsyncImage(
+                            model = track.coverUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Text(
+                            track.title.take(1).uppercase(Locale.getDefault()),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = scheme.primary,
+                        )
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = track.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp),
+                )
+            }
+        }
+    }
 }

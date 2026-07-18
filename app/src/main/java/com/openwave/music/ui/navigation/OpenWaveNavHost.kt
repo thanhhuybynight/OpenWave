@@ -182,6 +182,7 @@ fun OpenWaveNavHost(
                         onPlayUnified = { hit -> playerVm.playUnified(hit) },
                         onPrefetch = { track -> playerVm.prefetch(track) },
                         onAddToPlaylist = { addTrack = it },
+                        onAddToQueue = { track -> playerVm.enqueueTrack(track) },
                         onStartStation = { track ->
                             playerVm.startStation(track)
                             showFullPlayer = true
