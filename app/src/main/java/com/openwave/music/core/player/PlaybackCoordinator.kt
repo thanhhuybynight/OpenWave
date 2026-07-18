@@ -108,7 +108,9 @@ class PlaybackCoordinator @Inject constructor(
             PlayEvent(
                 trackId = track.id,
                 title = track.title,
-                artist = track.artists.joinToString { it.name },
+                artist = com.openwave.music.core.domain.ArtistNameSplitter
+                    .encodeFromArtists(track.artists)
+                    .ifBlank { track.artists.joinToString { it.name } },
                 source = track.source,
                 playedAtMs = System.currentTimeMillis(),
                 durationMs = track.durationMs,

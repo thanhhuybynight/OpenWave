@@ -59,7 +59,7 @@ import java.util.Locale
 @Composable
 fun ProfileScreen(
     onPlayTrack: (Track) -> Unit,
-    onArtistClick: (name: String) -> Unit,
+    onArtistClick: (name: String, channelId: String?) -> Unit,
     onOpenSettings: () -> Unit = {},
     vm: ProfileViewModel = hiltViewModel(),
     modifier: Modifier = Modifier,
@@ -137,10 +137,10 @@ fun ProfileScreen(
                     contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    items(recentArtists, key = { it.name }) { artist ->
+                    items(recentArtists, key = { "${it.channelId ?: ""}:${it.name}" }) { artist ->
                         RecentArtistChip(
                             artist = artist,
-                            onClick = { onArtistClick(artist.name) },
+                            onClick = { onArtistClick(artist.name, artist.channelId) },
                         )
                     }
                 }

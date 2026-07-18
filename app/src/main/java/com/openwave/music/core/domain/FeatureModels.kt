@@ -153,6 +153,8 @@ data class RecentArtist(
     val lastPlayedAtMs: Long,
     val playCount: Int,
     val coverUrl: String? = null,
+    /** YouTube channel id (UC…) when resolved for a separate artist profile. */
+    val channelId: String? = null,
 )
 
 data class UserProfile(

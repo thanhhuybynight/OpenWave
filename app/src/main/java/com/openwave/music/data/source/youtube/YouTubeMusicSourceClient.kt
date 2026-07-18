@@ -2,6 +2,7 @@ package com.openwave.music.data.source.youtube
 
 import android.util.Log
 import com.openwave.music.core.domain.Artist
+import com.openwave.music.core.domain.ArtistNameSplitter
 import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.MusicSourceClient
 import com.openwave.music.core.domain.SearchResult
@@ -127,13 +128,7 @@ class YouTubeMusicSourceClient @Inject constructor(
                 tracks[id] = Track(
                     id = id,
                     title = title,
-                    artists = listOf(
-                        Artist(
-                            id = "yt-${item.uploaderName.hashCode()}",
-                            name = item.uploaderName.orEmpty().ifBlank { "YouTube" },
-                            source = MusicSource.YOUTUBE_MUSIC,
-                        ),
-                    ),
+                    artists = artistsFromCredits(item.uploaderName, title),
                     durationMs = if (durationSec > 0) durationSec * 1000 else 0L,
                     source = MusicSource.YOUTUBE_MUSIC,
                     coverUrl = item.thumbnails
@@ -151,16 +146,11 @@ class YouTubeMusicSourceClient @Inject constructor(
             info.relatedItems.filterIsInstance<StreamInfoItem>().forEach { item ->
                 val url = item.url ?: return@forEach
                 val id = extractVideoId(url) ?: return@forEach
+                val title = item.name.orEmpty()
                 tracks[id] = Track(
                     id = id,
-                    title = item.name.orEmpty(),
-                    artists = listOf(
-                        Artist(
-                            id = "yt-${item.uploaderName}",
-                            name = item.uploaderName.orEmpty().ifBlank { "YouTube" },
-                            source = MusicSource.YOUTUBE_MUSIC,
-                        ),
-                    ),
+                    title = title,
+                    artists = artistsFromCredits(item.uploaderName, title),
                     durationMs = if (item.duration > 0) item.duration * 1000 else 0L,
                     source = MusicSource.YOUTUBE_MUSIC,
                     coverUrl = item.thumbnails?.firstOrNull()?.url,
@@ -175,18 +165,45 @@ class YouTubeMusicSourceClient @Inject constructor(
     private fun NpStreamInfo.toTrack(): Track = Track(
         id = extractVideoId(url) ?: id.toString(),
         title = name.orEmpty(),
-        artists = listOf(
-            Artist(
-                id = uploaderUrl.orEmpty(),
-                name = uploaderName.orEmpty().ifBlank { "YouTube" },
-                source = MusicSource.YOUTUBE_MUSIC,
-            ),
-        ),
+        artists = artistsFromCredits(uploaderName, name.orEmpty()),
         durationMs = if (duration > 0) duration * 1000 else 0L,
         source = MusicSource.YOUTUBE_MUSIC,
         coverUrl = thumbnails?.firstOrNull()?.url,
         sourceUri = url,
     )
+
+    /**
+     * Build separate [Artist] entries from uploader + title credits
+     * (e.g. "Bruno Mars, ROSÉ", "Artist feat. Guest").
+     */
+    private fun artistsFromCredits(uploader: String?, title: String): List<Artist> {
+        val names = linkedSetOf<String>()
+        ArtistNameSplitter.split(uploader.orEmpty()).forEach { names += it }
+        // feat./with in title
+        Regex(
+            """\((?:feat\.?|ft\.?|with)\s+([^)]+)\)""",
+            RegexOption.IGNORE_CASE,
+        ).find(title)?.groupValues?.getOrNull(1)?.let { credit ->
+            ArtistNameSplitter.split(credit).forEach { names += it }
+        }
+        Regex(
+            """\s+(?:feat\.?|ft\.?|with)\s+(.+)$""",
+            RegexOption.IGNORE_CASE,
+        ).find(title)?.groupValues?.getOrNull(1)?.let { credit ->
+            ArtistNameSplitter.split(credit.removeSuffix(")").trim()).forEach { names += it }
+        }
+        if (names.isEmpty()) {
+            val fallback = uploader.orEmpty().ifBlank { "YouTube" }
+            names += fallback
+        }
+        return names.map { n ->
+            Artist(
+                id = "yt-${n.hashCode()}",
+                name = n,
+                source = MusicSource.YOUTUBE_MUSIC,
+            )
+        }
+    }
 
     companion object {
         private const val TAG = "YtmSource"

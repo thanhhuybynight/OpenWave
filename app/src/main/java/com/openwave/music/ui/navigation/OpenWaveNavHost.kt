@@ -207,8 +207,13 @@ fun OpenWaveNavHost(
                 composable(RootDest.Profile.route) {
                     ProfileScreen(
                         onPlayTrack = { playerVm.playTrack(it) },
-                        onArtistClick = { name ->
-                            navController.navigate(artistRoute(name = name))
+                        onArtistClick = { name, channelId ->
+                            navController.navigate(
+                                artistRoute(
+                                    name = name,
+                                    channel = channelId,
+                                ),
+                            )
                         },
                         onOpenSettings = {
                             navController.navigate("settings")

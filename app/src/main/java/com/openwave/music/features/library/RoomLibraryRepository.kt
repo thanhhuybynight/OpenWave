@@ -166,15 +166,48 @@ class RoomLibraryRepository @Inject constructor(
         }
 
     override fun recentArtists(limit: Int): Flow<List<com.openwave.music.core.domain.RecentArtist>> =
-        events.recentArtists(limit).map { rows ->
-            rows.map {
-                com.openwave.music.core.domain.RecentArtist(
-                    name = it.name,
-                    lastPlayedAtMs = it.lastPlayedAtMs,
-                    playCount = it.playCount,
-                    coverUrl = it.coverUrl,
-                )
+        // Pull recent track rows then expand multi-artist credits into separate chips.
+        events.recentTracks((limit * 4).coerceAtLeast(40)).map { rows ->
+            data class Agg(
+                var lastPlayedAtMs: Long,
+                var playCount: Int,
+                var coverUrl: String?,
+            )
+            val map = linkedMapOf<String, Pair<String, Agg>>()
+            for (row in rows) {
+                val names = com.openwave.music.core.domain.ArtistNameSplitter.split(row.artist)
+                    .ifEmpty {
+                        listOfNotNull(row.artist.takeIf { it.isNotBlank() })
+                    }
+                for (name in names) {
+                    val key = name.lowercase()
+                    val cur = map[key]
+                    if (cur == null) {
+                        map[key] = name to Agg(
+                            lastPlayedAtMs = row.lastPlayedAtMs,
+                            playCount = 1,
+                            coverUrl = null, // don't use track art as artist avatar
+                        )
+                    } else {
+                        val agg = cur.second
+                        agg.playCount += 1
+                        if (row.lastPlayedAtMs > agg.lastPlayedAtMs) {
+                            agg.lastPlayedAtMs = row.lastPlayedAtMs
+                        }
+                    }
+                }
             }
+            map.values
+                .map { (name, agg) ->
+                    com.openwave.music.core.domain.RecentArtist(
+                        name = name,
+                        lastPlayedAtMs = agg.lastPlayedAtMs,
+                        playCount = agg.playCount,
+                        coverUrl = agg.coverUrl,
+                    )
+                }
+                .sortedByDescending { it.lastPlayedAtMs }
+                .take(limit)
         }
 
     override suspend fun recordPlay(event: PlayEvent) {
@@ -182,6 +215,7 @@ class RoomLibraryRepository @Inject constructor(
             PlayEventEntity(
                 trackId = event.trackId,
                 title = event.title,
+                // Prefer structured multi-artist encoding when writer used joinToString
                 artist = event.artist,
                 source = event.source.name,
                 playedAtMs = event.playedAtMs,
