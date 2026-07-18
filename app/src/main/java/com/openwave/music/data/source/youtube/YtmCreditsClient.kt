@@ -61,16 +61,54 @@ class YtmCreditsClient @Inject constructor(
             .toString()
         val root = post("https://music.youtube.com/youtubei/v1/next?prettyPrint=false", body)
             ?: return emptyList()
-        // Prefer longBylineText runs (full multi-artist with browseIds)
+        // Collect EVERY longBylineText artist run (performers), ignore album/topic rows
         val artists = ArrayList<Artist>()
         findLongBylineRuns(root).forEach { run ->
             parseArtistRun(run)?.let { artists += it }
         }
-        if (artists.isNotEmpty()) {
-            Log.d(TAG, "next $videoId artists=${artists.map { it.name }}")
-            return artists.distinctBy { it.id.ifBlank { it.name.lowercase() } }
+        // Also harvest any MUSIC_PAGE_TYPE_ARTIST runs elsewhere (watch header variants)
+        if (artists.isEmpty()) {
+            findAllArtistRuns(root).forEach { run ->
+                parseArtistRun(run)?.let { artists += it }
+            }
         }
-        return emptyList()
+        val deduped = artists.distinctBy {
+            it.id.takeIf { id -> id.startsWith("UC") } ?: it.name.lowercase()
+        }
+        if (deduped.isNotEmpty()) {
+            Log.i(TAG, "next $videoId performers=${deduped.map { "${it.name}/${it.id}" }}")
+        } else {
+            Log.w(TAG, "next $videoId: no MUSIC_PAGE_TYPE_ARTIST runs")
+        }
+        return deduped
+    }
+
+    /** Walk entire next payload for runs that browse to an artist page. */
+    private fun findAllArtistRuns(root: JSONObject): List<JSONObject> {
+        val out = ArrayList<JSONObject>()
+        fun walk(o: Any?) {
+            when (o) {
+                is JSONObject -> {
+                    // A "run" object: { text, navigationEndpoint.browseEndpoint... }
+                    if (o.has("text") && o.has("navigationEndpoint")) {
+                        val pageType = o.optJSONObject("navigationEndpoint")
+                            ?.optJSONObject("browseEndpoint")
+                            ?.optJSONObject("browseEndpointContextSupportedConfigs")
+                            ?.optJSONObject("browseEndpointContextMusicConfig")
+                            ?.optString("pageType")
+                            .orEmpty()
+                        if (pageType == "MUSIC_PAGE_TYPE_ARTIST") {
+                            out += o
+                        }
+                    }
+                    val keys = o.keys()
+                    while (keys.hasNext()) walk(o.opt(keys.next()))
+                }
+                is JSONArray -> for (i in 0 until o.length()) walk(o.opt(i))
+            }
+        }
+        walk(root)
+        return out
     }
 
     private fun fetchSearch(query: String, limit: Int): List<Track> {

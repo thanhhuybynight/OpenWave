@@ -54,15 +54,18 @@ class ArtistProfileResolver @Inject constructor(
             coroutineScope {
                 artists.map { a ->
                     async {
-                        val resolved = when {
-                            !a.channelId.isNullOrBlank() -> resolveChannel(a.channelId)
-                            else -> resolveExactName(a.name)
+                        // ONLY resolve by known UC channel from YTM credits.
+                        // Never name-search (that picks the first unrelated "Rose"/cover channel).
+                        val channelId = a.channelId?.takeIf { it.startsWith("UC") }
+                        if (channelId == null) {
+                            // Keep name-only chip without inventing a profile
+                            return@async a
                         }
-                        if (resolved == null) a
-                        else a.copy(
+                        val resolved = resolveChannel(channelId) ?: return@async a
+                        a.copy(
                             name = resolved.name.ifBlank { a.name },
                             coverUrl = resolved.imageUrl ?: a.coverUrl,
-                            channelId = resolved.channelId ?: a.channelId,
+                            channelId = resolved.channelId ?: channelId,
                         )
                     }
                 }.awaitAll()

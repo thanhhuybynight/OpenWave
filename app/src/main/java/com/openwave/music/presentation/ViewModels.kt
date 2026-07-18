@@ -191,7 +191,8 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
-     * Attach full performer list (with UC… browse ids) from YTM /next when source is YTM.
+     * Prefer YTM /next performer list (every MUSIC_PAGE_TYPE_ARTIST run + UC browse id).
+     * Never trust a single topic-channel / joined "A & B" uploader as the only credit.
      */
     private suspend fun enrichCredits(track: Track): Track {
         if (track.source != MusicSource.YOUTUBE_MUSIC &&
@@ -202,12 +203,27 @@ class PlayerViewModel @Inject constructor(
         val videoId = YouTubeMusicSourceClient.extractVideoId(track.id)
             ?: YouTubeMusicSourceClient.extractVideoId(track.sourceUri.orEmpty())
             ?: return track
-        // Already has multiple UC-linked artists — keep
-        val hasLinked = track.artists.count { it.id.startsWith("UC") } >= 2
-        if (hasLinked) return track
         val credited = runCatching { ytmCredits.artistsForVideo(videoId) }
             .getOrDefault(emptyList())
-        if (credited.isEmpty()) return track
+        if (credited.isEmpty()) {
+            // Last resort: split a joined name blob into separate names (no channel ids)
+            if (track.artists.size == 1) {
+                val n = track.artists.first().name
+                val parts = ArtistNameSplitter.split(n)
+                if (parts.size >= 2) {
+                    return track.copy(
+                        artists = parts.map { name ->
+                            com.openwave.music.core.domain.Artist(
+                                id = "yt-${name.hashCode()}",
+                                name = name,
+                                source = MusicSource.YOUTUBE_MUSIC,
+                            )
+                        },
+                    )
+                }
+            }
+            return track
+        }
         return track.copy(artists = credited)
     }
 
