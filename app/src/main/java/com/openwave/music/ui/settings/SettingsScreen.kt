@@ -43,6 +43,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     val autoContinue by vm.autoContinue.collectAsStateWithLifecycle()
+    val crossplay by vm.crossplay.collectAsStateWithLifecycle()
     val scheme = MaterialTheme.colorScheme
     val context = LocalContext.current
 
@@ -80,10 +81,20 @@ fun SettingsScreen(
             SectionLabel("Phát nhạc")
             SettingsSwitchRow(
                 title = "Auto radio",
+                description = "Tự thêm bài liên quan khi hết hàng đợi",
                 checked = autoContinue,
                 onCheckedChange = vm::setAutoContinue,
             )
-            // Crossfade toggle hidden until dual-player blend is real (settings were no-op)
+            SettingsSwitchRow(
+                title = "Crossplay",
+                description = if (crossplay) {
+                    "Bật — bài tiếp theo có thể lấy từ mọi nguồn (YouTube Music, SoundCloud…)"
+                } else {
+                    "Tắt — chỉ phát tiếp từ cùng nguồn với bài hiện tại"
+                },
+                checked = crossplay,
+                onCheckedChange = vm::setCrossplay,
+            )
 
             Spacer(Modifier.height(20.dp))
             HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
@@ -141,20 +152,34 @@ private fun SettingsSwitchRow(
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    description: String? = null,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp),
+            .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
-        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 12.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (!description.isNullOrBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,

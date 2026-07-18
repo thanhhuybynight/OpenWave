@@ -12,6 +12,9 @@ class SettingsViewModel @Inject constructor(
 ) : ViewModel() {
 
     val autoContinue: StateFlow<Boolean> = radio.autoContinue
+    val crossplay: StateFlow<Boolean> = radio.crossplay
 
     fun setAutoContinue(enabled: Boolean) = radio.setAutoContinue(enabled)
+
+    fun setCrossplay(enabled: Boolean) = radio.setCrossplay(enabled)
 }

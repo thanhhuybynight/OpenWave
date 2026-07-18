@@ -5,6 +5,7 @@ import com.openwave.music.core.domain.FastMusicCatalog
 import com.openwave.music.core.domain.PlaybackState
 import com.openwave.music.core.domain.Track
 import com.openwave.music.features.OfflineRepository
+import com.openwave.music.features.settings.PlaybackSettingsStore
 import com.openwave.music.features.station.StationRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,8 +28,9 @@ import javax.inject.Singleton
 
 /**
  * Auto radio / station queue:
- * - When a track ends and there is no next item, generate a random related queue and continue.
+ * - When a track ends and there is no next item, generate a related queue and continue.
  * - [startStation] builds a station from a seed and starts playback immediately.
+ * - [crossplay] controls whether next tracks may come from other free sources.
  */
 @Singleton
 class RadioQueueManager @Inject constructor(
@@ -36,6 +38,7 @@ class RadioQueueManager @Inject constructor(
     private val catalog: FastMusicCatalog,
     private val stations: StationRepository,
     private val offline: OfflineRepository,
+    private val settings: PlaybackSettingsStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mutex = Mutex()
@@ -44,6 +47,9 @@ class RadioQueueManager @Inject constructor(
 
     private val _autoContinue = MutableStateFlow(true)
     val autoContinue: StateFlow<Boolean> = _autoContinue.asStateFlow()
+
+    private val _crossplay = MutableStateFlow(true)
+    val crossplay: StateFlow<Boolean> = _crossplay.asStateFlow()
 
     private val _stationActive = MutableStateFlow(false)
     val stationActive: StateFlow<Boolean> = _stationActive.asStateFlow()
@@ -59,6 +65,12 @@ class RadioQueueManager @Inject constructor(
     fun start() {
         if (started) return
         started = true
+        scope.launch {
+            settings.autoContinue.collectLatest { _autoContinue.value = it }
+        }
+        scope.launch {
+            settings.crossplay.collectLatest { _crossplay.value = it }
+        }
         scope.launch {
             player.snapshot
                 .map { it.state to (it.track?.id ?: "") }
@@ -96,10 +108,16 @@ class RadioQueueManager @Inject constructor(
 
     fun setAutoContinue(enabled: Boolean) {
         _autoContinue.value = enabled
+        scope.launch { settings.setAutoContinue(enabled) }
     }
 
     fun toggleAutoContinue() {
-        _autoContinue.value = !_autoContinue.value
+        setAutoContinue(!_autoContinue.value)
+    }
+
+    fun setCrossplay(enabled: Boolean) {
+        _crossplay.value = enabled
+        scope.launch { settings.setCrossplay(enabled) }
     }
 
     /**
@@ -112,16 +130,20 @@ class RadioQueueManager @Inject constructor(
                 _isBuilding.value = true
                 _stationActive.value = true
                 val artist = seed.artists.firstOrNull()?.name.orEmpty()
-                _stationLabel.value = if (artist.isNotBlank()) {
-                    "$artist station"
-                } else {
-                    "${seed.title} station"
+                val cross = _crossplay.value
+                _stationLabel.value = buildString {
+                    if (artist.isNotBlank()) append("$artist station")
+                    else append("${seed.title} station")
+                    if (cross) append(" · crossplay")
                 }
             }
             try {
                 if (!player.awaitReady()) return@launch
-                val related = stations.buildStation(seed, limit = STATION_SIZE)
-                    .filter { it.id !in playedIds || it.id == seed.id }
+                val related = stations.buildStation(
+                    seed = seed,
+                    limit = STATION_SIZE,
+                    crossplay = _crossplay.value,
+                ).filter { it.id !in playedIds || it.id == seed.id }
                 val queueTracks = buildList {
                     add(seed)
                     addAll(related.filter { it.id != seed.id })
@@ -140,7 +162,11 @@ class RadioQueueManager @Inject constructor(
                     val rest = queueTracks.drop(resolved.size)
                     appendResolved(rest, maxResolve = PRELOAD)
                 }
-                Log.i(TAG, "station started seed=${seed.id} queue=${queueTracks.size}")
+                Log.i(
+                    TAG,
+                    "station started seed=${seed.id} crossplay=${_crossplay.value} " +
+                        "queue=${queueTracks.size}",
+                )
             } catch (t: Throwable) {
                 Log.e(TAG, "startStation: ${t.message}", t)
             } finally {
@@ -160,16 +186,24 @@ class RadioQueueManager @Inject constructor(
         try {
             if (player.hasNext() && !playImmediately) return
             _isBuilding.value = true
-            val related = stations.buildStation(seed, limit = STATION_SIZE)
-                .filter { it.id != seed.id && it.id !in playedIds }
+            val cross = _crossplay.value
+            val related = stations.buildStation(
+                seed = seed,
+                limit = STATION_SIZE,
+                crossplay = cross,
+            ).filter { it.id != seed.id && it.id !in playedIds }
             if (related.isEmpty()) {
-                Log.w(TAG, "no related for auto-queue ${seed.id}")
+                Log.w(TAG, "no related for auto-queue ${seed.id} crossplay=$cross")
                 return
             }
             _stationActive.value = true
             if (_stationLabel.value == null) {
                 val artist = seed.artists.firstOrNull()?.name.orEmpty()
-                _stationLabel.value = if (artist.isNotBlank()) "$artist radio" else "Auto radio"
+                _stationLabel.value = buildString {
+                    if (artist.isNotBlank()) append("$artist radio")
+                    else append("Auto radio")
+                    if (cross) append(" · crossplay")
+                }
             }
             if (playImmediately && !player.hasNext()) {
                 val resolved = resolveMany(related, maxResolve = PRELOAD)
