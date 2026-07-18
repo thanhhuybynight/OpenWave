@@ -1,0 +1,76 @@
+name: Android Debug APK
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: android-debug-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Assemble debug
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses >/dev/null || true
+
+      - name: Install SDK packages
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Grant execute to gradlew
+        run: chmod +x ./gradlew
+
+      - name: Assemble debug APK
+        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
+        env:
+          ORG_GRADLE_PROJECT_android.injected.invoked.from.ide: false
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenWave-debug
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/androidTest/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload mapping (if any)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenWave-debug-reports
+          path: |
+            app/build/reports/**
+          if-no-files-found: ignore
+          retention-days: 7
