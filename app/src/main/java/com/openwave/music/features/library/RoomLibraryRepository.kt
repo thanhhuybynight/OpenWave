@@ -1,6 +1,8 @@
 package com.openwave.music.features.library
 
+import com.openwave.music.core.domain.Artist
 import com.openwave.music.core.domain.LocalPlaylist
+import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.PlayEvent
 import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.TrackStats
@@ -24,21 +26,48 @@ class RoomLibraryRepository @Inject constructor(
 
     override fun playlists(): Flow<List<LocalPlaylist>> =
         playlists.all().map { list ->
-            list.map {
+            list.map { entity ->
                 LocalPlaylist(
-                    id = it.id,
-                    title = it.title,
-                    description = it.description,
-                    coverUrl = it.coverUrl,
-                    remoteYtmPlaylistId = it.remoteYtmPlaylistId,
-                    updatedAtMs = it.updatedAtMs,
+                    id = entity.id,
+                    title = entity.title,
+                    description = entity.description,
+                    coverUrl = entity.coverUrl,
+                    remoteYtmPlaylistId = entity.remoteYtmPlaylistId,
+                    updatedAtMs = entity.updatedAtMs,
                     trackIds = emptyList(),
                 )
             }
         }
 
+    override fun playlistTracks(playlistId: String): Flow<List<Track>> =
+        playlists.tracks(playlistId).map { rows ->
+            rows.map { row ->
+                val source = runCatching { MusicSource.valueOf(row.source) }
+                    .getOrDefault(MusicSource.UNKNOWN)
+                Track(
+                    id = row.trackId,
+                    title = row.title,
+                    artists = listOf(
+                        Artist(
+                            id = "pl-artist-${row.trackId}",
+                            name = row.artist,
+                            source = source,
+                        ),
+                    ),
+                    durationMs = row.durationMs,
+                    source = source,
+                    coverUrl = row.coverUrl,
+                    streamUrl = row.streamUrl,
+                    sourceUri = row.sourceUri,
+                )
+            }
+        }
+
     override suspend fun createPlaylist(title: String): LocalPlaylist {
-        val p = LocalPlaylist(id = UUID.randomUUID().toString(), title = title)
+        val p = LocalPlaylist(
+            id = UUID.randomUUID().toString(),
+            title = title.trim().ifBlank { "Playlist" },
+        )
         playlists.upsert(
             PlaylistEntity(
                 id = p.id,
@@ -52,7 +81,23 @@ class RoomLibraryRepository @Inject constructor(
         return p
     }
 
+    override suspend fun renamePlaylist(playlistId: String, title: String) {
+        val existing = playlists.get(playlistId) ?: return
+        playlists.upsert(
+            existing.copy(
+                title = title.trim().ifBlank { existing.title },
+                updatedAtMs = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    override suspend fun deletePlaylist(playlistId: String) {
+        playlists.clearTracks(playlistId)
+        playlists.delete(playlistId)
+    }
+
     override suspend fun addToPlaylist(playlistId: String, track: Track) {
+        val existing = playlists.get(playlistId) ?: return
         val pos = playlists.maxPosition(playlistId) + 1
         playlists.upsertTrack(
             PlaylistTrackEntity(
@@ -69,12 +114,8 @@ class RoomLibraryRepository @Inject constructor(
             ),
         )
         playlists.upsert(
-            PlaylistEntity(
-                id = playlistId,
-                title = track.title, // will be overwritten if we only have track; keep id stable
-                description = null,
-                coverUrl = track.coverUrl,
-                remoteYtmPlaylistId = null,
+            existing.copy(
+                coverUrl = existing.coverUrl ?: track.coverUrl,
                 updatedAtMs = System.currentTimeMillis(),
             ),
         )
@@ -82,6 +123,9 @@ class RoomLibraryRepository @Inject constructor(
 
     override suspend fun removeFromPlaylist(playlistId: String, trackId: String) {
         playlists.removeTrack(playlistId, trackId)
+        playlists.get(playlistId)?.let {
+            playlists.upsert(it.copy(updatedAtMs = System.currentTimeMillis()))
+        }
     }
 
     override suspend fun syncWithYtm(): Result<Unit> =

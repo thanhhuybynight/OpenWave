@@ -45,6 +45,7 @@ import java.util.concurrent.TimeUnit
 fun HomeScreen(
     onPlayDemo: () -> Unit,
     onPlayTrack: (Track) -> Unit = {},
+    onAddToPlaylist: (Track) -> Unit = {},
     vm: HomeViewModel = hiltViewModel(),
     modifier: Modifier = Modifier,
 ) {
@@ -149,6 +150,7 @@ fun HomeScreen(
                 shelf = shelf,
                 onTrack = onPlayTrack,
                 onDownload = { vm.download(it) },
+                onAddToPlaylist = onAddToPlaylist,
             )
         }
 
@@ -163,6 +165,7 @@ private fun ShelfSection(
     shelf: BrowseShelf,
     onTrack: (Track) -> Unit,
     onDownload: (Track) -> Unit,
+    onAddToPlaylist: (Track) -> Unit,
 ) {
     Column(Modifier.padding(vertical = 8.dp)) {
         Text(
@@ -172,7 +175,7 @@ private fun ShelfSection(
         )
         if (shelf.items.isEmpty()) {
             Text(
-                text = "Connect YTM browse (Phase 2A) to fill this shelf.",
+                text = "Pull to refresh or wait for network browse.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 24.dp),
@@ -187,7 +190,8 @@ private fun ShelfSection(
                         is BrowseItem.TrackItem -> TrackChip(
                             item = item,
                             onClick = { onTrack(item.track) },
-                            onLongClickDownload = { onDownload(item.track) },
+                            onDownload = { onDownload(item.track) },
+                            onAdd = { onAddToPlaylist(item.track) },
                         )
                         else -> CategoryChip(title = item.title, subtitle = item.subtitle)
                     }
@@ -201,11 +205,12 @@ private fun ShelfSection(
 private fun TrackChip(
     item: BrowseItem.TrackItem,
     onClick: () -> Unit,
-    onLongClickDownload: () -> Unit,
+    onDownload: () -> Unit,
+    onAdd: () -> Unit,
 ) {
     Card(
         onClick = onClick,
-        modifier = Modifier.width(148.dp),
+        modifier = Modifier.width(156.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -226,8 +231,11 @@ private fun TrackChip(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            TextButton(onClick = onLongClickDownload, modifier = Modifier.padding(top = 4.dp)) {
+            TextButton(onClick = onDownload, modifier = Modifier.padding(top = 2.dp)) {
                 Text("Save offline")
+            }
+            TextButton(onClick = onAdd) {
+                Text("Add to playlist")
             }
         }
     }

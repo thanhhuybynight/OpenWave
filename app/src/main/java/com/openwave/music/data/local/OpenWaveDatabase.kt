@@ -118,14 +118,23 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlists ORDER BY updatedAtMs DESC")
     fun all(): Flow<List<PlaylistEntity>>
 
+    @Query("SELECT * FROM playlists WHERE id = :id LIMIT 1")
+    suspend fun get(id: String): PlaylistEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: PlaylistEntity)
 
     @Query("DELETE FROM playlists WHERE id = :id")
     suspend fun delete(id: String)
 
+    @Query("DELETE FROM playlist_tracks WHERE playlistId = :playlistId")
+    suspend fun clearTracks(playlistId: String)
+
     @Query("SELECT * FROM playlist_tracks WHERE playlistId = :playlistId ORDER BY position")
     fun tracks(playlistId: String): Flow<List<PlaylistTrackEntity>>
+
+    @Query("SELECT COUNT(*) FROM playlist_tracks WHERE playlistId = :playlistId")
+    fun trackCount(playlistId: String): Flow<Int>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertTrack(entity: PlaylistTrackEntity)

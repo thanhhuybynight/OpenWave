@@ -39,7 +39,10 @@ interface StreamQualitySelector {
 
 interface LibraryRepository {
     fun playlists(): Flow<List<LocalPlaylist>>
+    fun playlistTracks(playlistId: String): Flow<List<Track>>
     suspend fun createPlaylist(title: String): LocalPlaylist
+    suspend fun renamePlaylist(playlistId: String, title: String)
+    suspend fun deletePlaylist(playlistId: String)
     suspend fun addToPlaylist(playlistId: String, track: Track)
     suspend fun removeFromPlaylist(playlistId: String, trackId: String)
     /** Optional: push/pull when YTM session present. */

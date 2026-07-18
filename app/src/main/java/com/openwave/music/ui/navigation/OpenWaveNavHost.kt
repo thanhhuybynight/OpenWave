@@ -29,8 +29,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.openwave.music.core.domain.Track
+import com.openwave.music.presentation.LibraryViewModel
 import com.openwave.music.presentation.PlayerViewModel
 import com.openwave.music.ui.home.HomeScreen
+import com.openwave.music.ui.library.AddToPlaylistDialog
+import com.openwave.music.ui.library.LibraryScreen
 import com.openwave.music.ui.player.MiniPlayerBar
 import com.openwave.music.ui.player.NowPlayingScreen
 import com.openwave.music.ui.search.SearchScreen
@@ -48,13 +52,16 @@ private enum class RootDest(
 @Composable
 fun OpenWaveNavHost(
     playerVm: PlayerViewModel = hiltViewModel(),
+    libraryVm: LibraryViewModel = hiltViewModel(),
 ) {
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val snapshot by playerVm.snapshot.collectAsStateWithLifecycle()
     val votes by playerVm.votes.collectAsStateWithLifecycle()
+    val playlists by libraryVm.playlists.collectAsStateWithLifecycle()
     var showFullPlayer by remember { mutableStateOf(false) }
+    var addTrack by remember { mutableStateOf<Track?>(null) }
 
     LaunchedEffect(Unit) {
         playerVm.connect()
@@ -116,6 +123,7 @@ fun OpenWaveNavHost(
                     HomeScreen(
                         onPlayDemo = { playerVm.playDemo() },
                         onPlayTrack = { playerVm.playTrack(it) },
+                        onAddToPlaylist = { addTrack = it },
                     )
                 }
                 composable(RootDest.Search.route) {
@@ -123,16 +131,15 @@ fun OpenWaveNavHost(
                         onPlayTrack = { track -> playerVm.playTrack(track) },
                         onPlayUnified = { hit -> playerVm.playUnified(hit) },
                         onPrefetch = { track -> playerVm.prefetch(track) },
+                        onAddToPlaylist = { addTrack = it },
                     )
                 }
                 composable(RootDest.Library.route) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "Library arrives in Phase 4",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    LibraryScreen(
+                        onPlayTrack = { playerVm.playTrack(it) },
+                        onPlayQueue = { tracks, index -> playerVm.playQueue(tracks, index) },
+                        vm = libraryVm,
+                    )
                 }
             }
 
@@ -145,5 +152,20 @@ fun OpenWaveNavHost(
                 )
             }
         }
+    }
+
+    addTrack?.let { track ->
+        AddToPlaylistDialog(
+            playlists = playlists,
+            onDismiss = { addTrack = null },
+            onCreateAndAdd = { title ->
+                libraryVm.createPlaylistAndAdd(title, track)
+                addTrack = null
+            },
+            onPick = { id ->
+                libraryVm.addToPlaylist(id, track)
+                addTrack = null
+            },
+        )
     }
 }

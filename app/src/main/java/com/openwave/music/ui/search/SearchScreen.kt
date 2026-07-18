@@ -15,10 +15,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -41,6 +43,7 @@ fun SearchScreen(
     onPlayTrack: (Track) -> Unit,
     onPlayUnified: (UnifiedTrack) -> Unit = { onPlayTrack(it.track) },
     onPrefetch: (Track) -> Unit = {},
+    onAddToPlaylist: (Track) -> Unit = {},
     vm: SearchViewModel = hiltViewModel(),
 ) {
     val query by vm.query.collectAsStateWithLifecycle()
@@ -117,6 +120,7 @@ fun SearchScreen(
                 UnifiedTrackRow(
                     hit = hit,
                     onClick = { onPlayUnified(hit) },
+                    onAdd = { onAddToPlaylist(hit.track) },
                 )
             }
 
@@ -138,6 +142,7 @@ fun SearchScreen(
 private fun UnifiedTrackRow(
     hit: UnifiedTrack,
     onClick: () -> Unit,
+    onAdd: () -> Unit,
 ) {
     val track = hit.track
     Row(
@@ -171,6 +176,12 @@ private fun UnifiedTrackRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Spacer(Modifier.width(8.dp))
+        IconButton(onClick = onAdd) {
+            Icon(
+                Icons.AutoMirrored.Outlined.PlaylistAdd,
+                contentDescription = "Add to playlist",
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }
