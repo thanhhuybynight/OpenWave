@@ -14,7 +14,10 @@ import com.openwave.music.core.domain.VoteStats
 import com.openwave.music.core.player.PlaybackCoordinator
 import com.openwave.music.core.player.PlayerController
 import com.openwave.music.core.player.RadioQueueManager
+import com.openwave.music.core.domain.ArtistNameSplitter
 import com.openwave.music.data.source.DemoSourceClient
+import com.openwave.music.data.source.youtube.YouTubeMusicSourceClient
+import com.openwave.music.data.source.youtube.YtmCreditsClient
 import com.openwave.music.features.CrossfadeController
 import com.openwave.music.features.LibraryRepository
 import com.openwave.music.features.OfflineRepository
@@ -47,6 +50,7 @@ class PlayerViewModel @Inject constructor(
     private val sleepTimer: SleepTimer,
     private val crossfade: CrossfadeController,
     private val radio: RadioQueueManager,
+    private val ytmCredits: YtmCreditsClient,
     coordinator: PlaybackCoordinator,
 ) : ViewModel() {
 
@@ -154,27 +158,28 @@ class PlayerViewModel @Inject constructor(
                     _playError.value = "Player not ready. Try again."
                     return@launch
                 }
-                val local = offline.localStreamPath(track.id)
+                // Resolve real YTM performers (not only first uploader) before history write
+                val credited = enrichCredits(track)
+                val local = offline.localStreamPath(credited.id)
                 val url = if (local != null) {
                     if (local.startsWith("/")) "file://$local" else local
                 } else {
-                    catalog.resolveStreamFast(track, alternates).url
+                    catalog.resolveStreamFast(credited, alternates).url
                 }
-                player.play(track, url, newQueue = listOf(track) + alternates)
-                scrobble.onTrackStarted(track)
+                player.play(credited, url, newQueue = listOf(credited) + alternates)
+                scrobble.onTrackStarted(credited)
                 library.recordPlay(
                     PlayEvent(
-                        trackId = track.id,
-                        title = track.title,
-                        artist = com.openwave.music.core.domain.ArtistNameSplitter
-                            .encodeFromArtists(track.artists)
-                            .ifBlank { track.artists.joinToString { it.name } },
-                        source = track.source,
+                        trackId = credited.id,
+                        title = credited.title,
+                        artist = ArtistNameSplitter.encodeFromArtists(credited.artists)
+                            .ifBlank { credited.artists.joinToString { it.name } },
+                        source = credited.source,
                         playedAtMs = System.currentTimeMillis(),
-                        durationMs = track.durationMs,
+                        durationMs = credited.durationMs,
                         listenedMs = 0L,
                         completed = false,
-                        coverUrl = track.coverUrl,
+                        coverUrl = credited.coverUrl,
                     ),
                 )
             } catch (t: Throwable) {
@@ -183,6 +188,27 @@ class PlayerViewModel @Inject constructor(
                 _isResolving.value = false
             }
         }
+    }
+
+    /**
+     * Attach full performer list (with UC… browse ids) from YTM /next when source is YTM.
+     */
+    private suspend fun enrichCredits(track: Track): Track {
+        if (track.source != MusicSource.YOUTUBE_MUSIC &&
+            track.source != MusicSource.UNKNOWN
+        ) {
+            return track
+        }
+        val videoId = YouTubeMusicSourceClient.extractVideoId(track.id)
+            ?: YouTubeMusicSourceClient.extractVideoId(track.sourceUri.orEmpty())
+            ?: return track
+        // Already has multiple UC-linked artists — keep
+        val hasLinked = track.artists.count { it.id.startsWith("UC") } >= 2
+        if (hasLinked) return track
+        val credited = runCatching { ytmCredits.artistsForVideo(videoId) }
+            .getOrDefault(emptyList())
+        if (credited.isEmpty()) return track
+        return track.copy(artists = credited)
     }
 
     fun playUnified(hit: UnifiedTrack) {

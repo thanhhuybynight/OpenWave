@@ -29,6 +29,7 @@ import javax.inject.Singleton
 class YouTubeMusicSourceClient @Inject constructor(
     private val newPipe: NewPipeBootstrap,
     private val streamResolver: YtmStreamResolver,
+    private val credits: YtmCreditsClient,
 ) : MusicSourceClient {
 
     override val source: MusicSource = MusicSource.YOUTUBE_MUSIC
@@ -36,10 +37,16 @@ class YouTubeMusicSourceClient @Inject constructor(
 
     override suspend fun search(query: String, limit: Int): SearchResult =
         withContext(Dispatchers.IO) {
-            newPipe.ensureInit()
             val q = query.trim()
             if (q.isEmpty()) return@withContext SearchResult()
 
+            // Prefer InnerTube YTM search — full multi-artist credits with browseIds
+            val ytm = runCatching { credits.searchSongs(q, limit) }
+                .onFailure { Log.w(TAG, "YTM search failed: ${it.message}") }
+                .getOrNull()
+            if (!ytm.isNullOrEmpty()) return@withContext SearchResult(tracks = ytm)
+
+            newPipe.ensureInit()
             val live = runCatching { searchNewPipe(q, limit) }
                 .onFailure { Log.w(TAG, "YT search failed: ${it.message}") }
                 .getOrNull()
@@ -55,12 +62,26 @@ class YouTubeMusicSourceClient @Inject constructor(
         }
 
     override suspend fun getTrack(id: String): Track? = withContext(Dispatchers.IO) {
-        newPipe.ensureInit()
         val videoId = normalizeId(id)
-        runCatching {
+        // Enrich performers via YTM /next (multi-artist + browseId)
+        val credited = runCatching { credits.artistsForVideo(videoId) }.getOrDefault(emptyList())
+        newPipe.ensureInit()
+        val base = runCatching {
             NpStreamInfo.getInfo(watchUrl(videoId)).toTrack()
         }.getOrNull()
             ?: DemoCatalog.tracks().firstOrNull { it.id == id || it.id == videoId }
+        when {
+            base != null && credited.isNotEmpty() -> base.copy(artists = credited)
+            base != null -> base
+            credited.isNotEmpty() -> Track(
+                id = videoId,
+                title = credited.joinToString(" & ") { it.name },
+                artists = credited,
+                source = MusicSource.YOUTUBE_MUSIC,
+                sourceUri = watchUrl(videoId),
+            )
+            else -> null
+        }
     }
 
     override suspend fun getStream(track: Track): StreamInfo? = withContext(Dispatchers.IO) {

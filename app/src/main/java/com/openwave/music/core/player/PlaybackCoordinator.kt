@@ -5,7 +5,9 @@ import com.openwave.music.core.domain.PlayEvent
 import com.openwave.music.core.domain.SkipSegment
 import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.VoteStats
+import com.openwave.music.core.domain.ArtistNameSplitter
 import com.openwave.music.data.source.youtube.YouTubeMusicSourceClient
+import com.openwave.music.data.source.youtube.YtmCreditsClient
 import com.openwave.music.features.LibraryRepository
 import com.openwave.music.features.ReturnYoutubeDislikeClient
 import com.openwave.music.features.ScrobbleRepository
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -37,6 +40,7 @@ class PlaybackCoordinator @Inject constructor(
     private val sponsorBlock: SponsorBlockClient,
     private val ryd: ReturnYoutubeDislikeClient,
     private val radio: RadioQueueManager,
+    private val ytmCredits: YtmCreditsClient,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var tickJob: Job? = null
@@ -104,19 +108,29 @@ class PlaybackCoordinator @Inject constructor(
         val listened = accumulatedListenMs +
             (System.currentTimeMillis() - listenStartMs).coerceAtLeast(0L)
         scrobble.onTrackEnded(track, listened, track.durationMs.coerceAtLeast(listened))
+        val credited = withContext(Dispatchers.IO) {
+            val videoId = YouTubeMusicSourceClient.extractVideoId(track.id)
+                ?: YouTubeMusicSourceClient.extractVideoId(track.sourceUri.orEmpty())
+            if (videoId != null && track.artists.count { it.id.startsWith("UC") } < 2) {
+                val artists = runCatching { ytmCredits.artistsForVideo(videoId) }
+                    .getOrDefault(emptyList())
+                if (artists.isNotEmpty()) track.copy(artists = artists) else track
+            } else {
+                track
+            }
+        }
         library.recordPlay(
             PlayEvent(
-                trackId = track.id,
-                title = track.title,
-                artist = com.openwave.music.core.domain.ArtistNameSplitter
-                    .encodeFromArtists(track.artists)
-                    .ifBlank { track.artists.joinToString { it.name } },
-                source = track.source,
+                trackId = credited.id,
+                title = credited.title,
+                artist = ArtistNameSplitter.encodeFromArtists(credited.artists)
+                    .ifBlank { credited.artists.joinToString { it.name } },
+                source = credited.source,
                 playedAtMs = System.currentTimeMillis(),
-                durationMs = track.durationMs,
+                durationMs = credited.durationMs,
                 listenedMs = listened,
                 completed = true,
-                coverUrl = track.coverUrl,
+                coverUrl = credited.coverUrl,
             ),
         )
         accumulatedListenMs = 0L

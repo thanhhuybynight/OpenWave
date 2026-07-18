@@ -173,37 +173,51 @@ class RoomLibraryRepository @Inject constructor(
                 var playCount: Int,
                 var coverUrl: String?,
             )
-            val map = linkedMapOf<String, Pair<String, Agg>>()
+            data class Agg2(
+                var name: String,
+                var channelId: String?,
+                var lastPlayedAtMs: Long,
+                var playCount: Int,
+            )
+            val map = linkedMapOf<String, Agg2>()
             for (row in rows) {
-                val names = com.openwave.music.core.domain.ArtistNameSplitter.split(row.artist)
+                val credits = com.openwave.music.core.domain.ArtistNameSplitter
+                    .splitDetailed(row.artist)
                     .ifEmpty {
-                        listOfNotNull(row.artist.takeIf { it.isNotBlank() })
+                        listOfNotNull(
+                            row.artist.takeIf { it.isNotBlank() }?.let {
+                                com.openwave.music.core.domain.ArtistNameSplitter.Credit(it)
+                            },
+                        )
                     }
-                for (name in names) {
-                    val key = name.lowercase()
+                for (c in credits) {
+                    val key = c.channelId?.lowercase() ?: c.name.lowercase()
                     val cur = map[key]
                     if (cur == null) {
-                        map[key] = name to Agg(
+                        map[key] = Agg2(
+                            name = c.name,
+                            channelId = c.channelId,
                             lastPlayedAtMs = row.lastPlayedAtMs,
                             playCount = 1,
-                            coverUrl = null, // don't use track art as artist avatar
                         )
                     } else {
-                        val agg = cur.second
-                        agg.playCount += 1
-                        if (row.lastPlayedAtMs > agg.lastPlayedAtMs) {
-                            agg.lastPlayedAtMs = row.lastPlayedAtMs
+                        cur.playCount += 1
+                        if (row.lastPlayedAtMs > cur.lastPlayedAtMs) {
+                            cur.lastPlayedAtMs = row.lastPlayedAtMs
+                            cur.name = c.name
+                            if (c.channelId != null) cur.channelId = c.channelId
                         }
                     }
                 }
             }
             map.values
-                .map { (name, agg) ->
+                .map {
                     com.openwave.music.core.domain.RecentArtist(
-                        name = name,
-                        lastPlayedAtMs = agg.lastPlayedAtMs,
-                        playCount = agg.playCount,
-                        coverUrl = agg.coverUrl,
+                        name = it.name,
+                        lastPlayedAtMs = it.lastPlayedAtMs,
+                        playCount = it.playCount,
+                        coverUrl = null,
+                        channelId = it.channelId,
                     )
                 }
                 .sortedByDescending { it.lastPlayedAtMs }
