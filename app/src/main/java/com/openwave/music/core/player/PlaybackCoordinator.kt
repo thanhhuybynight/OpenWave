@@ -36,6 +36,7 @@ class PlaybackCoordinator @Inject constructor(
     private val library: LibraryRepository,
     private val sponsorBlock: SponsorBlockClient,
     private val ryd: ReturnYoutubeDislikeClient,
+    private val radio: RadioQueueManager,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var tickJob: Job? = null
@@ -51,6 +52,7 @@ class PlaybackCoordinator @Inject constructor(
     val skipSegments: StateFlow<List<SkipSegment>> = _segments.asStateFlow()
 
     fun start() {
+        radio.start()
         scope.launch {
             player.snapshot
                 .map { it.track?.id to it.state }

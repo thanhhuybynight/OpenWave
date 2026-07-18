@@ -65,6 +65,10 @@ fun OpenWaveNavHost(
     val sleepState by playerVm.sleepState.collectAsStateWithLifecycle()
     val crossfade by playerVm.crossfadeSettings.collectAsStateWithLifecycle()
     val quality by playerVm.quality.collectAsStateWithLifecycle()
+    val autoContinue by playerVm.autoContinue.collectAsStateWithLifecycle()
+    val stationActive by playerVm.stationActive.collectAsStateWithLifecycle()
+    val stationLabel by playerVm.stationLabel.collectAsStateWithLifecycle()
+    val stationBuilding by playerVm.stationBuilding.collectAsStateWithLifecycle()
     var showFullPlayer by remember { mutableStateOf(false) }
     var addTrack by remember { mutableStateOf<Track?>(null) }
 
@@ -86,6 +90,12 @@ fun OpenWaveNavHost(
             onCollapse = { showFullPlayer = false },
             onShuffle = playerVm::toggleShuffle,
             onRepeat = playerVm::cycleRepeat,
+            onStartStation = playerVm::startStationFromCurrent,
+            onToggleAutoContinue = playerVm::toggleAutoContinue,
+            autoContinue = autoContinue,
+            stationActive = stationActive,
+            stationLabel = stationLabel,
+            stationBuilding = stationBuilding,
             voteLabel = voteLabel,
             sleepState = sleepState,
             crossfade = crossfade,
@@ -144,7 +154,11 @@ fun OpenWaveNavHost(
                         onPlayUnified = { hit -> playerVm.playUnified(hit) },
                         onPrefetch = { track -> playerVm.prefetch(track) },
                         onAddToPlaylist = { addTrack = it },
-                        isResolving = isResolving,
+                        onStartStation = { track ->
+                            playerVm.startStation(track)
+                            showFullPlayer = true
+                        },
+                        isResolving = isResolving || stationBuilding,
                         playError = playError,
                         onClearError = playerVm::clearPlayError,
                     )

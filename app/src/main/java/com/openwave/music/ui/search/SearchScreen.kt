@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Radio
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -57,6 +58,7 @@ fun SearchScreen(
     onPlayUnified: (UnifiedTrack) -> Unit = { onPlayTrack(it.track) },
     onPrefetch: (Track) -> Unit = {},
     onAddToPlaylist: (Track) -> Unit = {},
+    onStartStation: (Track) -> Unit = {},
     isResolving: Boolean = false,
     playError: String? = null,
     onClearError: () -> Unit = {},
@@ -200,6 +202,7 @@ fun SearchScreen(
                     hit = hit,
                     onClick = { onPlayUnified(hit) },
                     onAdd = { onAddToPlaylist(hit.track) },
+                    onStation = { onStartStation(hit.track) },
                 )
             }
 
@@ -247,6 +250,7 @@ private fun UnifiedTrackRow(
     hit: UnifiedTrack,
     onClick: () -> Unit,
     onAdd: () -> Unit,
+    onStation: () -> Unit,
 ) {
     val track = hit.track
     val scheme = MaterialTheme.colorScheme
@@ -312,6 +316,13 @@ private fun UnifiedTrackRow(
                 Icons.Filled.PlayArrow,
                 contentDescription = "Play",
                 tint = scheme.primary,
+            )
+        }
+        IconButton(onClick = onStation) {
+            Icon(
+                Icons.Outlined.Radio,
+                contentDescription = "Start station",
+                tint = scheme.onSurfaceVariant,
             )
         }
         IconButton(onClick = onAdd) {

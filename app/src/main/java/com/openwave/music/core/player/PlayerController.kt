@@ -120,6 +120,33 @@ class PlayerController @Inject constructor(
         publish(c)
     }
 
+    /** Append resolved items to the end of the current Media3 playlist. */
+    fun appendResolved(
+        tracks: List<Pair<Track, String>>,
+        fullQueueTail: List<Track> = tracks.map { it.first },
+    ) {
+        val c = controller ?: return
+        if (tracks.isEmpty()) return
+        fullQueueTail.forEach { trackById[it.id] = it }
+        tracks.forEach { trackById[it.first.id] = it.first }
+        queue = (queue + fullQueueTail).distinctBy { it.id }
+        val items = tracks.map { (t, url) ->
+            MediaItemFactory.fromUrl(
+                mediaId = t.id,
+                title = t.title,
+                artist = t.artists.joinToString { it.name },
+                streamUrl = url,
+                artworkUri = t.coverUrl,
+            )
+        }
+        c.addMediaItems(items)
+        publish(c)
+    }
+
+    fun hasNext(): Boolean = controller?.hasNextMediaItem() == true
+
+    fun mediaItemCount(): Int = controller?.mediaItemCount ?: 0
+
     fun togglePlayPause() {
         val c = controller ?: return
         if (c.isPlaying) c.pause() else c.play()

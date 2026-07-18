@@ -80,6 +80,36 @@ class SoundCloudSourceClient @Inject constructor(
         }
     }
 
+    /**
+     * Related / station-style tracks for a seed (SoundCloud radio).
+     * GET /tracks/{id}/related
+     */
+    suspend fun relatedTracks(trackId: String, limit: Int = 24): List<Track> =
+        withContext(Dispatchers.IO) {
+            try {
+                val cid = requireClientId()
+                val numeric = trackId.removePrefix("sc:")
+                val url =
+                    "https://api-v2.soundcloud.com/tracks/$numeric/related" +
+                        "?client_id=$cid&limit=$limit&offset=0&app_locale=en"
+                val body = get(url) ?: return@withContext emptyList()
+                val root = JSONObject(body)
+                val arr = root.optJSONArray("collection")
+                    ?: root.optJSONArray("tracks")
+                    ?: JSONArray()
+                buildList {
+                    for (i in 0 until arr.length()) {
+                        parseTrack(arr.getJSONObject(i))?.let { add(it) }
+                    }
+                }.also {
+                    Log.d(TAG, "related ${it.size} for sc:$numeric")
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "relatedTracks: ${t.message}", t)
+                emptyList()
+            }
+        }
+
     override suspend fun getStream(track: Track): StreamInfo? = withContext(Dispatchers.IO) {
         // Local demo URLs only when explicitly local
         if (track.source == MusicSource.LOCAL &&

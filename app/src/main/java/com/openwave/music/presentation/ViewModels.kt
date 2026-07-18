@@ -14,6 +14,7 @@ import com.openwave.music.core.domain.UnifiedTrack
 import com.openwave.music.core.domain.VoteStats
 import com.openwave.music.core.player.PlaybackCoordinator
 import com.openwave.music.core.player.PlayerController
+import com.openwave.music.core.player.RadioQueueManager
 import com.openwave.music.data.source.DemoSourceClient
 import com.openwave.music.features.CrossfadeController
 import com.openwave.music.features.LibraryRepository
@@ -47,6 +48,7 @@ class PlayerViewModel @Inject constructor(
     private val sleepTimer: SleepTimer,
     private val crossfade: CrossfadeController,
     private val qualitySelector: StreamQualitySelector,
+    private val radio: RadioQueueManager,
     coordinator: PlaybackCoordinator,
 ) : ViewModel() {
 
@@ -54,6 +56,10 @@ class PlayerViewModel @Inject constructor(
     val votes: StateFlow<VoteStats?> = coordinator.votes
     val sleepState: StateFlow<SleepTimerState> = sleepTimer.state
     val crossfadeSettings: StateFlow<CrossfadeSettings> = crossfade.settings
+    val autoContinue: StateFlow<Boolean> = radio.autoContinue
+    val stationActive: StateFlow<Boolean> = radio.stationActive
+    val stationLabel: StateFlow<String?> = radio.stationLabel
+    val stationBuilding: StateFlow<Boolean> = radio.isBuilding
 
     private val _quality = MutableStateFlow(qualitySelector.preference.preferred)
     val quality: StateFlow<StreamQuality> = _quality.asStateFlow()
@@ -69,6 +75,21 @@ class PlayerViewModel @Inject constructor(
     fun clearPlayError() {
         _playError.value = null
     }
+
+    /** Start a radio station from [seed] (YT Music / SoundCloud style). */
+    fun startStation(seed: Track) {
+        _playError.value = null
+        radio.startStation(seed)
+    }
+
+    fun startStationFromCurrent() {
+        val track = snapshot.value.track ?: return
+        startStation(track)
+    }
+
+    fun toggleAutoContinue() = radio.toggleAutoContinue()
+
+    fun setAutoContinue(enabled: Boolean) = radio.setAutoContinue(enabled)
 
     fun startSleepTimer(minutes: Int) {
         sleepTimer.start(minutes * 60_000L)
