@@ -102,21 +102,8 @@ fun HomeScreen(
         }
 
         feed?.let { home ->
-            // ── Đề xuất ──────────────────────────────────────────────
-            item {
-                SectionHeader(
-                    title = home.recommendations.title,
-                    subtitle = home.recommendations.subtitle,
-                )
-            }
-            if (home.recommendations.items.isEmpty()) {
-                item {
-                    EmptyHint(
-                        text = home.recommendations.subtitle
-                            ?: "Nghe nhạc để nhận đề xuất cá nhân hoá.",
-                    )
-                }
-            } else {
+            item { SectionTitle(home.recommendations.title) }
+            if (home.recommendations.items.isNotEmpty()) {
                 item {
                     RecommendationRow(
                         items = home.recommendations.items.filterIsInstance<BrowseItem.TrackItem>(),
@@ -125,24 +112,13 @@ fun HomeScreen(
                 }
             }
 
-            // ── Hàng đầu ─────────────────────────────────────────────
             item {
                 Spacer(Modifier.height(12.dp))
-                SectionHeader(
-                    title = "Hàng đầu",
-                    subtitle = home.chartDateLabel?.let { "YouTube Charts · $it" }
-                        ?: home.topSongs.subtitle
-                        ?: "charts.youtube.com",
-                )
+                SectionTitle("Hàng đầu")
             }
 
-            // Bài hát hàng đầu
-            item {
-                SubSectionTitle(home.topSongs.title)
-            }
-            if (home.topSongs.items.isEmpty()) {
-                item { EmptyHint("Chưa tải được bảng xếp hạng bài hát.") }
-            } else {
+            item { SectionTitle(home.topSongs.title) }
+            if (home.topSongs.items.isNotEmpty()) {
                 items(
                     home.topSongs.items.filterIsInstance<BrowseItem.TrackItem>(),
                     key = { "song-${it.id}" },
@@ -154,14 +130,11 @@ fun HomeScreen(
                 }
             }
 
-            // Nghệ sĩ hàng đầu
             item {
                 Spacer(Modifier.height(8.dp))
-                SubSectionTitle(home.topArtists.title)
+                SectionTitle(home.topArtists.title)
             }
-            if (home.topArtists.items.isEmpty()) {
-                item { EmptyHint("Chưa tải được bảng xếp hạng nghệ sĩ.") }
-            } else {
+            if (home.topArtists.items.isNotEmpty()) {
                 item {
                     ArtistRow(
                         items = home.topArtists.items.filterIsInstance<BrowseItem.ArtistItem>(),
@@ -190,19 +163,12 @@ private fun HomeHeader(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Trang chủ",
-                    style = MaterialTheme.typography.displayLarge,
-                    color = scheme.onSurface,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "Đề xuất từ lịch sử · Hàng đầu từ YouTube Charts",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = scheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                text = "Trang chủ",
+                style = MaterialTheme.typography.displayLarge,
+                color = scheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
             IconButton(onClick = onRefresh, enabled = !loading) {
                 if (loading) {
                     CircularProgressIndicator(
@@ -226,46 +192,15 @@ private fun HomeHeader(
 }
 
 @Composable
-private fun SectionHeader(title: String, subtitle: String?) {
-    Column(
+private fun SectionTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.headlineSmall,
+        color = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
             .padding(top = 16.dp, bottom = 10.dp),
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        if (!subtitle.isNullOrBlank()) {
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun SubSectionTitle(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-    )
-}
-
-@Composable
-private fun EmptyHint(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
     )
 }
 
@@ -319,22 +254,14 @@ private fun RecommendCard(
                     )
                 }
             }
-            Column(Modifier.padding(10.dp)) {
-                Text(
-                    text = item.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = scheme.onSurface,
-                )
-                Text(
-                    text = item.subtitle.orEmpty(),
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = scheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                color = scheme.onSurface,
+                modifier = Modifier.padding(10.dp),
+            )
         }
     }
 }
@@ -381,21 +308,13 @@ private fun RankedTrackRow(
                 )
             }
         }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = item.subtitle.orEmpty(),
-                style = MaterialTheme.typography.bodyMedium,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Text(
+            text = item.title,
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -452,13 +371,6 @@ private fun ArtistAvatar(
             }
         }
         Spacer(Modifier.height(6.dp))
-        if (item.rank != null) {
-            Text(
-                text = "#${item.rank}",
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.primary,
-            )
-        }
         Text(
             text = item.title,
             style = MaterialTheme.typography.labelLarge,

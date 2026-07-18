@@ -125,22 +125,8 @@ fun ArtistScreen(
                         ArtistHeader(page = p)
                     }
 
-                    item {
-                        SectionTitle(
-                            title = "Nổi bật nhất",
-                            subtitle = "5 bài có lượt nghe cao nhất · YouTube Music",
-                        )
-                    }
-                    if (p.highlights.isEmpty()) {
-                        item {
-                            Text(
-                                text = "Chưa tìm thấy bài nổi bật.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = scheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                            )
-                        }
-                    } else {
+                    item { SectionTitle("Nổi bật nhất") }
+                    if (p.highlights.isNotEmpty()) {
                         itemsIndexed(p.highlights, key = { _, t -> t.id }) { index, track ->
                             HighlightRow(
                                 rank = index + 1,
@@ -152,21 +138,9 @@ fun ArtistScreen(
 
                     item {
                         Spacer(Modifier.height(12.dp))
-                        SectionTitle(
-                            title = "Album",
-                            subtitle = "Phát hành mới nhất trước",
-                        )
+                        SectionTitle("Album")
                     }
-                    if (p.albums.isEmpty()) {
-                        item {
-                            Text(
-                                text = "Chưa tìm thấy album.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = scheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                            )
-                        }
-                    } else {
+                    if (p.albums.isNotEmpty()) {
                         item {
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
@@ -232,38 +206,20 @@ private fun ArtistHeader(page: ArtistPage) {
             style = MaterialTheme.typography.headlineMedium,
             color = scheme.onSurface,
         )
-        if (page.subscriberCount != null && page.subscriberCount > 0) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = formatSubs(page.subscriberCount),
-                style = MaterialTheme.typography.bodyMedium,
-                color = scheme.onSurfaceVariant,
-            )
-        }
     }
 }
 
 @Composable
-private fun SectionTitle(title: String, subtitle: String?) {
-    Column(
+private fun SectionTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleLarge,
+        color = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
             .padding(top = 12.dp, bottom = 8.dp),
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        if (!subtitle.isNullOrBlank()) {
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+    )
 }
 
 @Composable
@@ -309,21 +265,13 @@ private fun HighlightRow(
                 )
             }
         }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = track.title,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = track.artists.joinToString { it.name },
-                style = MaterialTheme.typography.bodyMedium,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Text(
+            text = track.title,
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -362,35 +310,13 @@ private fun AlbumCard(
                     )
                 }
             }
-            Column(Modifier.padding(10.dp)) {
-                Text(
-                    text = album.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                val meta = buildString {
-                    album.year?.let { append(it) }
-                    album.trackCount?.let {
-                        if (isNotEmpty()) append(" · ")
-                        append("$it bài")
-                    }
-                }
-                if (meta.isNotBlank()) {
-                    Text(
-                        text = meta,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = scheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                }
-            }
+            Text(
+                text = album.title,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(10.dp),
+            )
         }
     }
-}
-
-private fun formatSubs(n: Long): String = when {
-    n >= 1_000_000 -> String.format(Locale.US, "%.1fM người đăng ký", n / 1_000_000.0)
-    n >= 1_000 -> String.format(Locale.US, "%.1fK người đăng ký", n / 1_000.0)
-    else -> "$n người đăng ký"
 }

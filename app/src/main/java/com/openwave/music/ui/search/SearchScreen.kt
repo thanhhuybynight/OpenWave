@@ -77,13 +77,7 @@ fun SearchScreen(
         Text(
             text = "Search",
             style = MaterialTheme.typography.displayLarge,
-            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
-        )
-        Text(
-            text = "YouTube · SoundCloud · Local demo",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 8.dp),
+            modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
         )
 
         OutlinedTextField(
@@ -208,35 +202,9 @@ fun SearchScreen(
 
             if (query.isNotBlank() && batch.isComplete && batch.tracks.isEmpty()) {
                 item {
-                    Column(Modifier.padding(16.dp)) {
-                        Text(
-                            text = "No results for \"$query\".",
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = "Tips: check network, try YouTube-only filter, or search \"demo\" / \"night\" for local samples.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        batch.errorBySource.forEach { (src, err) ->
-                            Text(
-                                "${SourcePolicy.displayName(src)}: $err",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.padding(top = 4.dp),
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (query.isBlank()) {
-                item {
                     Text(
-                        text = "Try: lofi, daft punk, ambient, or a track title. Tap a result to play.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = "No results for \"$query\".",
+                        style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(16.dp),
                     )
                 }
@@ -283,34 +251,13 @@ private fun UnifiedTrackRow(
             }
         }
         Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = track.title,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = buildString {
-                    append(track.artists.joinToString { it.name })
-                    append(" · ")
-                    append(SourcePolicy.displayName(track.source).substringBefore(" "))
-                    if (track.durationMs > 0) {
-                        append(" · ")
-                        append(formatDur(track.durationMs))
-                    }
-                    if (hit.alternates.isNotEmpty()) {
-                        append(" · +")
-                        append(hit.alternates.size)
-                        append(" src")
-                    }
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Text(
+            text = track.title,
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
         IconButton(onClick = onClick) {
             Icon(
                 Icons.Filled.PlayArrow,

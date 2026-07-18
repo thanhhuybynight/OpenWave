@@ -293,19 +293,13 @@ private fun PlaylistRow(
                 }
             }
             Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    playlist.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    "Local playlist",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                playlist.title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
             Box {
                 IconButton(onClick = { menu = true }) {
                     Icon(Icons.Outlined.MoreVert, contentDescription = "More")
@@ -500,7 +494,7 @@ private fun HistoryTab(scrobbles: List<ScrobbleEntry>) {
 @Composable
 private fun TrackLine(
     title: String,
-    subtitle: String,
+    subtitle: String = "",
     coverUrl: String?,
     onClick: () -> Unit,
     leadingIcon: (@Composable () -> Unit)? = null,
@@ -545,33 +539,20 @@ private fun TrackLine(
             }
         }
         Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
         trailing?.invoke()
     }
 }
 
 @Composable
 private fun EmptyHint(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(24.dp),
-    )
+    // Intentionally empty — titles only, no secondary empty-state copy
 }
 
 @Composable

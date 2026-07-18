@@ -189,7 +189,7 @@ fun NowPlayingScreen(
 
             Spacer(Modifier.height(28.dp))
 
-            // Metadata
+            // Metadata — title only
             Text(
                 text = track?.title ?: "Select a track",
                 style = MaterialTheme.typography.headlineMedium,
@@ -198,23 +198,6 @@ fun NowPlayingScreen(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = track?.artists?.joinToString { it.name } ?: "OpenWave",
-                style = MaterialTheme.typography.bodyLarge,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (!voteLabel.isNullOrBlank()) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = voteLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
-                )
-            }
 
             Spacer(Modifier.height(28.dp))
 
@@ -416,13 +399,6 @@ private fun SleepTimerFloat(
                             )
                         }
                     }
-                    Text(
-                        text = "Set how long until playback pauses.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = scheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-
                     if (sleepState.active) {
                         Spacer(Modifier.height(12.dp))
                         Surface(
@@ -430,24 +406,15 @@ private fun SleepTimerFloat(
                             color = scheme.primaryContainer,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Column(
+                            Text(
+                                text = formatRemain(sleepState.remainingMs),
+                                style = MaterialTheme.typography.headlineMedium,
+                                color = scheme.onPrimaryContainer,
+                                textAlign = TextAlign.Center,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 14.dp, horizontal = 12.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
-                                Text(
-                                    text = "Pausing in",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = scheme.onPrimaryContainer,
-                                )
-                                Text(
-                                    text = formatRemain(sleepState.remainingMs),
-                                    style = MaterialTheme.typography.headlineMedium,
-                                    color = scheme.onPrimaryContainer,
-                                    textAlign = TextAlign.Center,
-                                )
-                            }
+                            )
                         }
                     }
 
@@ -456,11 +423,6 @@ private fun SleepTimerFloat(
                         text = selectedLabel,
                         style = MaterialTheme.typography.headlineSmall,
                         color = scheme.primary,
-                    )
-                    Text(
-                        text = "hours  ·  minutes",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(4.dp))
                     TimePicker(
@@ -750,22 +712,14 @@ fun MiniPlayerBar(
                         )
                     }
                 }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = track.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = scheme.onSecondaryContainer,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = track.artists.joinToString { it.name },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = scheme.onSecondaryContainer.copy(alpha = 0.75f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                Text(
+                    text = track.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = scheme.onSecondaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
                 FilledIconButton(
                     onClick = onPlayPause,
                     shape = CircleShape,
