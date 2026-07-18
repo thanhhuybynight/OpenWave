@@ -1,5 +1,13 @@
 package com.openwave.music.ui.library
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -97,6 +105,11 @@ fun LibraryScreen(
         }
     }
 
+    // System back closes playlist detail before leaving Library tab
+    BackHandler(enabled = selectedId != null) {
+        vm.closePlaylist()
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         modifier = Modifier.fillMaxSize(),
@@ -107,9 +120,27 @@ fun LibraryScreen(
                 .padding(padding)
                 .statusBarsPadding(),
         ) {
-            if (selectedId != null) {
+            AnimatedContent(
+                targetState = selectedId,
+                transitionSpec = {
+                    if (targetState != null) {
+                        (slideInHorizontally(tween(280)) { it / 3 } + fadeIn(tween(280)))
+                            .togetherWith(
+                                slideOutHorizontally(tween(280)) { -it / 5 } + fadeOut(tween(200)),
+                            )
+                    } else {
+                        (slideInHorizontally(tween(280)) { -it / 5 } + fadeIn(tween(280)))
+                            .togetherWith(
+                                slideOutHorizontally(tween(280)) { it / 3 } + fadeOut(tween(200)),
+                            )
+                    }
+                },
+                label = "library_playlist",
+                modifier = Modifier.fillMaxSize(),
+            ) { openId ->
+            if (openId != null) {
                 PlaylistDetail(
-                    title = vm.playlistTitle(selectedId),
+                    title = vm.playlistTitle(openId),
                     tracks = playlistTracks,
                     onBack = vm::closePlaylist,
                     onPlayAll = {
@@ -119,13 +150,13 @@ fun LibraryScreen(
                         onPlayQueue(playlistTracks, index)
                     },
                     onRemove = { trackId ->
-                        selectedId?.let { vm.removeFromPlaylist(it, trackId) }
+                        vm.removeFromPlaylist(openId, trackId)
                     },
                     onDeletePlaylist = {
-                        selectedId?.let { vm.deletePlaylist(it) }
+                        vm.deletePlaylist(openId)
                     },
                     onRename = {
-                        val pl = playlists.firstOrNull { it.id == selectedId }
+                        val pl = playlists.firstOrNull { it.id == openId }
                         if (pl != null) renameTarget = pl
                     },
                 )
@@ -187,6 +218,7 @@ fun LibraryScreen(
                     LibraryTab.History -> HistoryTab(scrobbles = scrobbles)
                 }
             }
+            } // AnimatedContent
         }
     }
 

@@ -1,6 +1,17 @@
 package com.openwave.music.ui.navigation
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -24,8 +35,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.IntOffset
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavDestination
+import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -57,8 +71,14 @@ private enum class RootDest(
     Profile("profile", "Profile", Icons.Outlined.Person),
 }
 
+private val RootRoutes = RootDest.entries.map { it.route }.toSet()
+
 private const val ArtistRoute =
     "artist?name={name}&id={id}&avatar={avatar}&channel={channel}"
+
+private const val AnimMs = 280
+private val FadeSpec = tween<Float>(durationMillis = AnimMs, easing = FastOutSlowInEasing)
+private val SlideSpec = tween<IntOffset>(durationMillis = AnimMs, easing = FastOutSlowInEasing)
 
 private fun artistRoute(
     name: String,
@@ -75,6 +95,19 @@ private fun artistRoute(
     }
 }
 
+private fun routeBase(route: String?): String? =
+    route?.substringBefore('?')?.substringBefore('/')
+
+private fun tabIndex(route: String?): Int {
+    val base = routeBase(route) ?: return -1
+    return RootDest.entries.indexOfFirst { it.route == base }
+}
+
+private fun isRootTab(route: String?): Boolean {
+    val base = routeBase(route) ?: return false
+    return base in RootRoutes
+}
+
 @Composable
 fun OpenWaveNavHost(
     playerVm: PlayerViewModel = hiltViewModel(),
@@ -86,6 +119,7 @@ fun OpenWaveNavHost(
     val snapshot by playerVm.snapshot.collectAsStateWithLifecycle()
     val votes by playerVm.votes.collectAsStateWithLifecycle()
     val playlists by libraryVm.playlists.collectAsStateWithLifecycle()
+    val selectedPlaylistId by libraryVm.selectedPlaylistId.collectAsStateWithLifecycle()
     val isResolving by playerVm.isResolving.collectAsStateWithLifecycle()
     val playError by playerVm.playError.collectAsStateWithLifecycle()
     val sleepState by playerVm.sleepState.collectAsStateWithLifecycle()
@@ -104,154 +138,221 @@ fun OpenWaveNavHost(
 
     val onArtistRoute = currentRoute?.startsWith("artist") == true
     val onSettingsRoute = currentRoute == "settings"
-    val showBottomBar = !onArtistRoute && !onSettingsRoute
+    val showBottomBar = !onArtistRoute && !onSettingsRoute && !showFullPlayer
 
-    if (showFullPlayer) {
-        NowPlayingScreen(
-            snapshot = snapshot,
-            onPlayPause = playerVm::togglePlayPause,
-            onSeek = playerVm::seekTo,
-            onSkipNext = playerVm::skipNext,
-            onSkipPrevious = playerVm::skipPrevious,
-            onCollapse = { showFullPlayer = false },
-            onShuffle = playerVm::toggleShuffle,
-            onRepeat = playerVm::cycleRepeat,
-            onStartStation = playerVm::startStationFromCurrent,
-            stationActive = stationActive,
-            stationBuilding = stationBuilding,
-            voteLabel = voteLabel,
-            sleepState = sleepState,
-            onSleepDurationMs = playerVm::startSleepTimer,
-            onCancelSleep = playerVm::cancelSleepTimer,
-            modifier = Modifier.fillMaxSize(),
-        )
-        return
+    val canGoBack = showFullPlayer ||
+        addTrack != null ||
+        selectedPlaylistId != null ||
+        navController.previousBackStackEntry != null ||
+        (isRootTab(currentRoute) && routeBase(currentRoute) != RootDest.Home.route)
+
+    // System / gesture back: player → dialog → nested screen → playlist → home tab → exit
+    BackHandler(enabled = canGoBack) {
+        when {
+            showFullPlayer -> showFullPlayer = false
+            addTrack != null -> addTrack = null
+            selectedPlaylistId != null -> libraryVm.closePlaylist()
+            navController.previousBackStackEntry != null -> navController.popBackStack()
+            isRootTab(currentRoute) && routeBase(currentRoute) != RootDest.Home.route -> {
+                navController.navigate(RootDest.Home.route) {
+                    popUpTo(navController.graph.findStartDestination().id) {
+                        saveState = true
+                    }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
+        }
     }
 
-    Scaffold(
-        bottomBar = {
-            if (showBottomBar) {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                    RootDest.entries.forEach { dest ->
-                        NavigationBarItem(
-                            selected = currentRoute == dest.route,
-                            onClick = {
-                                navController.navigate(dest.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            bottomBar = {
+                AnimatedVisibility(
+                    visible = showBottomBar,
+                    enter = slideInVertically(animationSpec = SlideSpec) { it } + fadeIn(FadeSpec),
+                    exit = slideOutVertically(animationSpec = SlideSpec) { it } + fadeOut(FadeSpec),
+                ) {
+                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                        RootDest.entries.forEach { dest ->
+                            val selected = currentDestinationIs(backStack?.destination, dest.route)
+                            NavigationBarItem(
+                                selected = selected,
+                                onClick = {
+                                    if (selected && dest.route == RootDest.Library.route) {
+                                        // Re-tap Library closes open playlist
+                                        if (selectedPlaylistId != null) {
+                                            libraryVm.closePlaylist()
+                                        }
+                                        return@NavigationBarItem
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
+                                    navController.navigate(dest.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                },
+                                icon = { Icon(dest.icon, contentDescription = dest.label) },
+                                label = { Text(dest.label) },
+                            )
+                        }
+                    }
+                }
+            },
+        ) { padding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            ) {
+                NavHost(
+                    navController = navController,
+                    startDestination = RootDest.Home.route,
+                    modifier = Modifier.fillMaxSize(),
+                    enterTransition = {
+                        navEnterTransition(
+                            initialState.destination.route,
+                            targetState.destination.route,
+                        )
+                    },
+                    exitTransition = {
+                        navExitTransition(
+                            initialState.destination.route,
+                            targetState.destination.route,
+                        )
+                    },
+                    popEnterTransition = {
+                        slideInHorizontally(animationSpec = SlideSpec) { -it / 5 } +
+                            fadeIn(FadeSpec)
+                    },
+                    popExitTransition = {
+                        slideOutHorizontally(animationSpec = SlideSpec) { it / 3 } +
+                            fadeOut(FadeSpec)
+                    },
+                ) {
+                    composable(RootDest.Home.route) {
+                        HomeScreen(
+                            onPlayTrack = { playerVm.playTrack(it) },
+                            onArtistClick = { item ->
+                                navController.navigate(
+                                    artistRoute(
+                                        name = item.title,
+                                        id = item.id,
+                                        avatar = item.coverUrl ?: item.artist.imageUrl,
+                                        channel = item.channelId,
+                                    ),
+                                )
                             },
-                            icon = { Icon(dest.icon, contentDescription = dest.label) },
-                            label = { Text(dest.label) },
+                            onAddToPlaylist = { addTrack = it },
+                        )
+                    }
+                    composable(RootDest.Search.route) {
+                        SearchScreen(
+                            onPlayTrack = { track -> playerVm.playTrack(track) },
+                            onPlayUnified = { hit -> playerVm.playUnified(hit) },
+                            onPrefetch = { track -> playerVm.prefetch(track) },
+                            onAddToPlaylist = { addTrack = it },
+                            onAddToQueue = { track -> playerVm.enqueueTrack(track) },
+                            onStartStation = { track ->
+                                playerVm.startStation(track)
+                                showFullPlayer = true
+                            },
+                            isResolving = isResolving || stationBuilding,
+                            playError = playError,
+                            onClearError = playerVm::clearPlayError,
+                        )
+                    }
+                    composable(RootDest.Library.route) {
+                        LibraryScreen(
+                            onPlayTrack = { playerVm.playTrack(it) },
+                            onPlayQueue = { tracks, index -> playerVm.playQueue(tracks, index) },
+                            vm = libraryVm,
+                        )
+                    }
+                    composable(RootDest.Profile.route) {
+                        ProfileScreen(
+                            onPlayTrack = { playerVm.playTrack(it) },
+                            onOpenSettings = {
+                                navController.navigate("settings")
+                            },
+                        )
+                    }
+                    composable("settings") {
+                        SettingsScreen(
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable(
+                        route = ArtistRoute,
+                        arguments = listOf(
+                            navArgument("name") {
+                                type = NavType.StringType
+                                defaultValue = ""
+                            },
+                            navArgument("id") {
+                                type = NavType.StringType
+                                defaultValue = ""
+                            },
+                            navArgument("avatar") {
+                                type = NavType.StringType
+                                defaultValue = ""
+                            },
+                            navArgument("channel") {
+                                type = NavType.StringType
+                                defaultValue = ""
+                            },
+                        ),
+                    ) {
+                        ArtistScreen(
+                            onBack = { navController.popBackStack() },
+                            onPlayTrack = { playerVm.playTrack(it) },
+                            onPlayQueue = { tracks, index -> playerVm.playQueue(tracks, index) },
                         )
                     }
                 }
-            }
-        },
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            NavHost(
-                navController = navController,
-                startDestination = RootDest.Home.route,
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                composable(RootDest.Home.route) {
-                    HomeScreen(
-                        onPlayTrack = { playerVm.playTrack(it) },
-                        onArtistClick = { item ->
-                            navController.navigate(
-                                artistRoute(
-                                    name = item.title,
-                                    id = item.id,
-                                    avatar = item.coverUrl ?: item.artist.imageUrl,
-                                    channel = item.channelId,
-                                ),
-                            )
-                        },
-                        onAddToPlaylist = { addTrack = it },
-                    )
-                }
-                composable(RootDest.Search.route) {
-                    SearchScreen(
-                        onPlayTrack = { track -> playerVm.playTrack(track) },
-                        onPlayUnified = { hit -> playerVm.playUnified(hit) },
-                        onPrefetch = { track -> playerVm.prefetch(track) },
-                        onAddToPlaylist = { addTrack = it },
-                        onAddToQueue = { track -> playerVm.enqueueTrack(track) },
-                        onStartStation = { track ->
-                            playerVm.startStation(track)
-                            showFullPlayer = true
-                        },
-                        isResolving = isResolving || stationBuilding,
-                        playError = playError,
-                        onClearError = playerVm::clearPlayError,
-                    )
-                }
-                composable(RootDest.Library.route) {
-                    LibraryScreen(
-                        onPlayTrack = { playerVm.playTrack(it) },
-                        onPlayQueue = { tracks, index -> playerVm.playQueue(tracks, index) },
-                        vm = libraryVm,
-                    )
-                }
-                composable(RootDest.Profile.route) {
-                    ProfileScreen(
-                        onPlayTrack = { playerVm.playTrack(it) },
-                        onOpenSettings = {
-                            navController.navigate("settings")
-                        },
-                    )
-                }
-                composable("settings") {
-                    SettingsScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-                composable(
-                    route = ArtistRoute,
-                    arguments = listOf(
-                        navArgument("name") {
-                            type = NavType.StringType
-                            defaultValue = ""
-                        },
-                        navArgument("id") {
-                            type = NavType.StringType
-                            defaultValue = ""
-                        },
-                        navArgument("avatar") {
-                            type = NavType.StringType
-                            defaultValue = ""
-                        },
-                        navArgument("channel") {
-                            type = NavType.StringType
-                            defaultValue = ""
-                        },
-                    ),
-                ) {
-                    ArtistScreen(
-                        onBack = { navController.popBackStack() },
-                        onPlayTrack = { playerVm.playTrack(it) },
-                        onPlayQueue = { tracks, index -> playerVm.playQueue(tracks, index) },
-                    )
-                }
-            }
 
-            if (snapshot.track != null) {
-                MiniPlayerBar(
-                    snapshot = snapshot,
-                    onPlayPause = playerVm::togglePlayPause,
-                    onExpand = { showFullPlayer = true },
-                    onSeek = playerVm::seekTo,
+                AnimatedVisibility(
+                    visible = snapshot.track != null && !showFullPlayer,
+                    enter = slideInVertically(animationSpec = SlideSpec) { it } + fadeIn(FadeSpec),
+                    exit = slideOutVertically(animationSpec = SlideSpec) { it } + fadeOut(FadeSpec),
                     modifier = Modifier.align(Alignment.BottomCenter),
-                )
+                ) {
+                    MiniPlayerBar(
+                        snapshot = snapshot,
+                        onPlayPause = playerVm::togglePlayPause,
+                        onExpand = { showFullPlayer = true },
+                        onSeek = playerVm::seekTo,
+                    )
+                }
             }
+        }
+
+        // Full player overlays main UI with slide-up
+        AnimatedVisibility(
+            visible = showFullPlayer,
+            enter = slideInVertically(animationSpec = SlideSpec) { it } + fadeIn(FadeSpec),
+            exit = slideOutVertically(animationSpec = SlideSpec) { it } + fadeOut(FadeSpec),
+        ) {
+            NowPlayingScreen(
+                snapshot = snapshot,
+                onPlayPause = playerVm::togglePlayPause,
+                onSeek = playerVm::seekTo,
+                onSkipNext = playerVm::skipNext,
+                onSkipPrevious = playerVm::skipPrevious,
+                onCollapse = { showFullPlayer = false },
+                onShuffle = playerVm::toggleShuffle,
+                onRepeat = playerVm::cycleRepeat,
+                onStartStation = playerVm::startStationFromCurrent,
+                stationActive = stationActive,
+                stationBuilding = stationBuilding,
+                voteLabel = voteLabel,
+                sleepState = sleepState,
+                onSleepDurationMs = playerVm::startSleepTimer,
+                onCancelSleep = playerVm::cancelSleepTimer,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
     }
 
@@ -270,3 +371,35 @@ fun OpenWaveNavHost(
         )
     }
 }
+
+private fun currentDestinationIs(dest: NavDestination?, route: String): Boolean {
+    if (dest == null) return false
+    return dest.hierarchy.any { it.route == route || routeBase(it.route) == route }
+}
+
+private fun navEnterTransition(from: String?, to: String?) =
+    when {
+        // Tab ↔ tab: horizontal slide by tab order
+        tabIndex(from) >= 0 && tabIndex(to) >= 0 -> {
+            val dir = if (tabIndex(to) > tabIndex(from)) 1 else -1
+            slideInHorizontally(animationSpec = SlideSpec) { full -> dir * full / 5 } +
+                fadeIn(FadeSpec)
+        }
+        // Push nested (artist / settings): slide in from right
+        else -> {
+            slideInHorizontally(animationSpec = SlideSpec) { it / 3 } + fadeIn(FadeSpec)
+        }
+    }
+
+private fun navExitTransition(from: String?, to: String?) =
+    when {
+        tabIndex(from) >= 0 && tabIndex(to) >= 0 -> {
+            val dir = if (tabIndex(to) > tabIndex(from)) -1 else 1
+            slideOutHorizontally(animationSpec = SlideSpec) { full -> dir * full / 5 } +
+                fadeOut(FadeSpec)
+        }
+        else -> {
+            slideOutHorizontally(animationSpec = SlideSpec) { -it / 5 } + fadeOut(FadeSpec)
+        }
+    }
+
