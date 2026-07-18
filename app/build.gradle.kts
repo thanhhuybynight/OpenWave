@@ -63,6 +63,9 @@ android {
             excludes += setOf(
                 "/META-INF/{AL2.0,LGPL2.1}",
                 "META-INF/DEPENDENCIES",
+                "META-INF/NOTICE",
+                "META-INF/LICENSE",
+                "META-INF/*.kotlin_module",
             )
         }
     }
@@ -133,11 +136,15 @@ dependencies {
     // —— Serialization ——
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
-    // —— FOSS stream extractors (wire in Phase 2) ——
-    // NewPipeExtractor: YouTube / YouTube Music (InnerTube protocol)
-    // implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.3")
-    // SoundCloud public client_id rotation lives in :data/source/soundcloud
-    // Spotify / Apple Music: metadata-only adapters or licensed paths — see MASTER_PLAN.md
+    // —— WorkManager (offline downloads) ——
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
+    implementation("androidx.hilt:hilt-work:1.2.0")
+    ksp("androidx.hilt:hilt-compiler:1.2.0")
+
+    // —— FOSS extractors (Phase 2) ——
+    // NewPipeExtractor: YouTube / YT Music stream + search (GPL-3.0)
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.5")
+    // SoundCloud uses OkHttp public API (client_id discovery)
 
     // —— Testing ——
     testImplementation("junit:junit:4.13.2")

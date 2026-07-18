@@ -11,6 +11,7 @@ import com.openwave.music.core.domain.StreamInfo
 import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.UnifiedTrack
 import com.openwave.music.data.cache.StreamUrlCache
+import com.openwave.music.features.OfflineRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -32,12 +33,14 @@ import kotlin.math.max
  * - Parallel search, progressive [SearchBatch] emissions
  * - Per-source timeout so one dead API never freezes the UI
  * - Stream cache + race across alternate sources on play
+ * - Offline file path preferred when present
  * - Dedupe by normalized title+artist so one song ≠ four rows
  */
 @Singleton
 class FastMusicCatalogImpl @Inject constructor(
     private val clients: Set<@JvmSuppressWildcards MusicSourceClient>,
     private val streamCache: StreamUrlCache,
+    private val offline: OfflineRepository,
     override val config: AggregatorConfig = AggregatorConfig(),
 ) : FastMusicCatalog {
 
@@ -146,6 +149,15 @@ class FastMusicCatalogImpl @Inject constructor(
         track: Track,
         alternates: List<Track>,
     ): StreamInfo = withContext(Dispatchers.IO) {
+        // 0) Offline disk
+        offline.localStreamPath(track.id)?.let { path ->
+            return@withContext StreamInfo(
+                url = "file://$path",
+                mimeType = null,
+                qualityLabel = "offline",
+            )
+        }
+
         val candidates = buildList {
             add(track)
             addAll(alternates)

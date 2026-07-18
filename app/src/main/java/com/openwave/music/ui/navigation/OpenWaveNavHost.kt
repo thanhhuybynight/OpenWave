@@ -53,10 +53,15 @@ fun OpenWaveNavHost(
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val snapshot by playerVm.snapshot.collectAsStateWithLifecycle()
+    val votes by playerVm.votes.collectAsStateWithLifecycle()
     var showFullPlayer by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         playerVm.connect()
+    }
+
+    val voteLabel = votes?.let { v ->
+        "RYD  +${v.likes}  −${v.dislikes}"
     }
 
     if (showFullPlayer) {
@@ -67,6 +72,9 @@ fun OpenWaveNavHost(
             onSkipNext = playerVm::skipNext,
             onSkipPrevious = playerVm::skipPrevious,
             onCollapse = { showFullPlayer = false },
+            onShuffle = playerVm::toggleShuffle,
+            onRepeat = playerVm::cycleRepeat,
+            voteLabel = voteLabel,
             modifier = Modifier.fillMaxSize(),
         )
         return

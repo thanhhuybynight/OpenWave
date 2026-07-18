@@ -26,7 +26,7 @@ import javax.inject.Singleton
 
 /**
  * UI-facing façade over Media3 [MediaController].
- * Keeps Compose free of session plumbing.
+ * Supports queue, shuffle, and repeat.
  */
 @Singleton
 class PlayerController @Inject constructor(
@@ -40,6 +40,8 @@ class PlayerController @Inject constructor(
 
     private var currentTrack: Track? = null
     private var queue: List<Track> = emptyList()
+    /** mediaId → track for multi-item queues */
+    private val trackById = linkedMapOf<String, Track>()
 
     fun connect() {
         if (controllerFuture != null) return
@@ -64,17 +66,40 @@ class PlayerController @Inject constructor(
     }
 
     fun play(track: Track, streamUrl: String, newQueue: List<Track> = listOf(track)) {
-        val c = controller ?: return
-        currentTrack = track
-        queue = newQueue
-        val item = MediaItemFactory.fromUrl(
-            mediaId = track.id,
-            title = track.title,
-            artist = track.artists.joinToString { it.name },
-            streamUrl = streamUrl,
-            artworkUri = track.coverUrl,
+        playResolved(
+            tracks = listOf(track to streamUrl),
+            startIndex = 0,
+            fullQueue = newQueue.ifEmpty { listOf(track) },
         )
-        c.setMediaItem(item)
+    }
+
+    /**
+     * Play a resolved queue. [resolved] pairs must have stream URLs ready.
+     */
+    fun playResolved(
+        tracks: List<Pair<Track, String>>,
+        startIndex: Int = 0,
+        fullQueue: List<Track> = tracks.map { it.first },
+    ) {
+        val c = controller ?: return
+        if (tracks.isEmpty()) return
+        queue = fullQueue
+        trackById.clear()
+        fullQueue.forEach { trackById[it.id] = it }
+        tracks.forEach { trackById[it.first.id] = it.first }
+
+        val items = tracks.map { (t, url) ->
+            MediaItemFactory.fromUrl(
+                mediaId = t.id,
+                title = t.title,
+                artist = t.artists.joinToString { it.name },
+                streamUrl = url,
+                artworkUri = t.coverUrl,
+            )
+        }
+        val idx = startIndex.coerceIn(0, items.lastIndex)
+        currentTrack = tracks[idx].first
+        c.setMediaItems(items, idx, 0L)
         c.prepare()
         c.play()
         publish(c)
@@ -98,14 +123,41 @@ class PlayerController @Inject constructor(
     }
 
     fun skipNext() {
-        controller?.seekToNextMediaItem()
+        val c = controller ?: return
+        if (c.hasNextMediaItem()) c.seekToNextMediaItem()
+        else if (c.repeatMode == Player.REPEAT_MODE_ALL && c.mediaItemCount > 0) {
+            c.seekTo(0, 0L)
+        }
+        syncCurrentFromPlayer(c)
     }
 
     fun skipPrevious() {
-        controller?.seekToPreviousMediaItem()
+        val c = controller ?: return
+        if (c.currentPosition > 3_000L) {
+            c.seekTo(0L)
+        } else if (c.hasPreviousMediaItem()) {
+            c.seekToPreviousMediaItem()
+        } else {
+            c.seekTo(0L)
+        }
+        syncCurrentFromPlayer(c)
     }
 
-    /** Progress ticker for seek bar — collect in a ViewModel scope. */
+    fun setShuffle(enabled: Boolean) {
+        controller?.shuffleModeEnabled = enabled
+        controller?.let { publish(it) }
+    }
+
+    fun cycleRepeat() {
+        val c = controller ?: return
+        c.repeatMode = when (c.repeatMode) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+        publish(c)
+    }
+
     fun progressTicks(): Flow<PlaybackProgress> = callbackFlow {
         val c = controller
         if (c == null) {
@@ -130,13 +182,26 @@ class PlayerController @Inject constructor(
     private fun bind(c: MediaController) {
         c.addListener(object : Player.Listener {
             override fun onEvents(player: Player, events: Player.Events) {
+                if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) ||
+                    events.contains(Player.EVENT_TIMELINE_CHANGED)
+                ) {
+                    syncCurrentFromPlayer(player)
+                }
                 publish(player)
             }
         })
         publish(c)
     }
 
+    private fun syncCurrentFromPlayer(player: Player) {
+        val id = player.currentMediaItem?.mediaId
+        if (id != null) {
+            currentTrack = trackById[id] ?: currentTrack
+        }
+    }
+
     private fun publish(player: Player) {
+        syncCurrentFromPlayer(player)
         _snapshot.update {
             PlayerSnapshot(
                 track = currentTrack,

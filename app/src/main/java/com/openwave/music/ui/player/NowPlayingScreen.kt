@@ -88,6 +88,9 @@ fun NowPlayingScreen(
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
     onCollapse: () -> Unit,
+    onShuffle: () -> Unit = {},
+    onRepeat: () -> Unit = {},
+    voteLabel: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val track = snapshot.track
@@ -173,6 +176,14 @@ fun NowPlayingScreen(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (!voteLabel.isNullOrBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = voteLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
 
             Spacer(Modifier.height(28.dp))
 
@@ -203,18 +214,22 @@ fun NowPlayingScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = { /* shuffle */ }) {
+                IconButton(onClick = onShuffle) {
                     Icon(
                         Icons.Outlined.Shuffle,
                         contentDescription = "Shuffle",
-                        tint = scheme.onSurfaceVariant,
+                        tint = if (snapshot.isShuffle) scheme.primary else scheme.onSurfaceVariant,
                     )
                 }
-                IconButton(onClick = { /* repeat */ }) {
+                IconButton(onClick = onRepeat) {
                     Icon(
                         Icons.Outlined.Repeat,
                         contentDescription = "Repeat",
-                        tint = scheme.onSurfaceVariant,
+                        tint = if (snapshot.repeatMode != com.openwave.music.core.domain.RepeatMode.OFF) {
+                            scheme.primary
+                        } else {
+                            scheme.onSurfaceVariant
+                        },
                     )
                 }
             }

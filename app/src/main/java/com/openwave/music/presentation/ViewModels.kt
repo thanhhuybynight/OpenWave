@@ -7,13 +7,19 @@ import com.openwave.music.core.domain.PlayEvent
 import com.openwave.music.core.domain.SearchBatch
 import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.UnifiedTrack
+import com.openwave.music.core.domain.VoteStats
+import com.openwave.music.core.player.PlaybackCoordinator
 import com.openwave.music.core.player.PlayerController
 import com.openwave.music.data.source.DemoSourceClient
 import com.openwave.music.features.LibraryRepository
+import com.openwave.music.features.OfflineRepository
 import com.openwave.music.features.ScrobbleRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,9 +36,12 @@ class PlayerViewModel @Inject constructor(
     private val demo: DemoSourceClient,
     private val scrobble: ScrobbleRepository,
     private val library: LibraryRepository,
+    private val offline: OfflineRepository,
+    coordinator: PlaybackCoordinator,
 ) : ViewModel() {
 
     val snapshot = player.snapshot
+    val votes: StateFlow<VoteStats?> = coordinator.votes
 
     fun connect() = player.connect()
 
@@ -44,6 +53,13 @@ class PlayerViewModel @Inject constructor(
 
     fun skipPrevious() = player.skipPrevious()
 
+    fun toggleShuffle() {
+        val on = !(snapshot.value.isShuffle)
+        player.setShuffle(on)
+    }
+
+    fun cycleRepeat() = player.cycleRepeat()
+
     fun playDemo() {
         viewModelScope.launch {
             val track = demo.getTrack("demo-1") ?: return@launch
@@ -51,16 +67,13 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Tap-to-play path optimized for latency:
-     * cache → resolve race → ExoPlayer prepare/play.
-     * Also feeds local scrobble + play stats.
-     */
     fun playTrack(track: Track, alternates: List<Track> = emptyList()) {
         viewModelScope.launch {
             runCatching {
-                val stream = catalog.resolveStreamFast(track, alternates)
-                player.play(track, stream.url)
+                // Offline first
+                val local = offline.localStreamPath(track.id)
+                val url = local ?: catalog.resolveStreamFast(track, alternates).url
+                player.play(track, url, newQueue = listOf(track) + alternates)
                 scrobble.onTrackStarted(track)
                 library.recordPlay(
                     PlayEvent(
@@ -82,22 +95,39 @@ class PlayerViewModel @Inject constructor(
         playTrack(hit.track, hit.alternates)
     }
 
-    /** Warm cache while user scrolls (call from list visibility). */
+    /** Resolve and play an entire list (queue). */
+    fun playQueue(tracks: List<Track>, startIndex: Int = 0) {
+        if (tracks.isEmpty()) return
+        viewModelScope.launch {
+            runCatching {
+                val resolved = coroutineScope {
+                    tracks.map { t ->
+                        async {
+                            val local = offline.localStreamPath(t.id)
+                            val url = local ?: catalog.resolveStreamFast(t).url
+                            t to url
+                        }
+                    }.awaitAll()
+                }
+                player.playResolved(resolved, startIndex, tracks)
+                tracks.getOrNull(startIndex)?.let { scrobble.onTrackStarted(it) }
+            }
+        }
+    }
+
     fun prefetch(track: Track) {
         viewModelScope.launch {
             catalog.prefetchStream(track)
         }
     }
 
-    override fun onCleared() {
-        super.onCleared()
+    fun download(track: Track) {
+        viewModelScope.launch {
+            offline.enqueue(track)
+        }
     }
 }
 
-/**
- * Search hub: one query → progressive multi-source results.
- * Debounce keeps typing snappy; progressive batches paint early.
- */
 @OptIn(FlowPreview::class)
 @HiltViewModel
 class SearchViewModel @Inject constructor(

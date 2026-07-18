@@ -14,12 +14,12 @@ import com.openwave.music.features.SponsorBlockClient
 import com.openwave.music.features.StreamQualitySelector
 import com.openwave.music.features.VideoRepository
 import com.openwave.music.features.audiofx.CrossfadeControllerImpl
-import com.openwave.music.features.browse.StubBrowseRepository
-import com.openwave.music.features.library.InMemoryLibraryRepository
-import com.openwave.music.features.offline.InMemoryOfflineRepository
+import com.openwave.music.features.browse.YtmBrowseRepository
+import com.openwave.music.features.library.RoomLibraryRepository
+import com.openwave.music.features.offline.DiskOfflineRepository
 import com.openwave.music.features.quality.DefaultStreamQualitySelector
 import com.openwave.music.features.ryd.ReturnYoutubeDislikeClientImpl
-import com.openwave.music.features.scrobble.LocalScrobbleRepository
+import com.openwave.music.features.scrobble.RoomScrobbleRepository
 import com.openwave.music.features.sleeptimer.SleepTimerImpl
 import com.openwave.music.features.sponsorblock.SponsorBlockClientImpl
 import com.openwave.music.features.stubs.StubAiSuggestionEngine
@@ -37,19 +37,19 @@ import javax.inject.Singleton
 abstract class FeatureModule {
 
     @Binds @Singleton
-    abstract fun browse(impl: StubBrowseRepository): BrowseRepository
+    abstract fun browse(impl: YtmBrowseRepository): BrowseRepository
 
     @Binds @Singleton
     abstract fun quality(impl: DefaultStreamQualitySelector): StreamQualitySelector
 
     @Binds @Singleton
-    abstract fun library(impl: InMemoryLibraryRepository): LibraryRepository
+    abstract fun library(impl: RoomLibraryRepository): LibraryRepository
 
     @Binds @Singleton
-    abstract fun offline(impl: InMemoryOfflineRepository): OfflineRepository
+    abstract fun offline(impl: DiskOfflineRepository): OfflineRepository
 
     @Binds @Singleton
-    abstract fun scrobble(impl: LocalScrobbleRepository): ScrobbleRepository
+    abstract fun scrobble(impl: RoomScrobbleRepository): ScrobbleRepository
 
     @Binds @Singleton
     abstract fun sponsorBlock(impl: SponsorBlockClientImpl): SponsorBlockClient
