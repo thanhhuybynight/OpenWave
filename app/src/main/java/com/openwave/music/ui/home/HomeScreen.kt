@@ -1,6 +1,8 @@
 package com.openwave.music.ui.home
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -22,6 +25,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -36,16 +41,40 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.openwave.music.R
 import com.openwave.music.core.domain.BrowseItem
 import com.openwave.music.core.domain.Track
 import com.openwave.music.presentation.HomeViewModel
+import java.util.Calendar
 import java.util.Locale
+
+/** Soft meadow palette inspired by the cat-in-headphones hero. */
+private object HomeMeadow {
+    val GrassDeep = Color(0xFF3D6B4F)
+    val GrassMid = Color(0xFF6FAF7A)
+    val GrassSoft = Color(0xFFC8E6C9)
+    val GrassPale = Color(0xFFE8F5E9)
+    val Blush = Color(0xFFFF8FAB)
+    val BlushSoft = Color(0xFFFFC1CC)
+    val BlushPale = Color(0xFFFFE4EC)
+    val Cream = Color(0xFFFFFBF5)
+    val CreamCard = Color(0xFFFFFFF8)
+    val Ink = Color(0xFF2C3E2D)
+    val InkMuted = Color(0xFF5C6B5E)
+    val RankPink = Color(0xFFE85A7A)
+}
 
 @Composable
 fun HomeScreen(
@@ -58,88 +87,128 @@ fun HomeScreen(
     val feed by vm.feed.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
-    val scheme = MaterialTheme.colorScheme
 
-    LazyColumn(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .statusBarsPadding(),
-        contentPadding = PaddingValues(bottom = 100.dp),
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        HomeMeadow.GrassPale,
+                        HomeMeadow.Cream,
+                        HomeMeadow.BlushPale.copy(alpha = 0.45f),
+                        HomeMeadow.Cream,
+                    ),
+                ),
+            ),
     ) {
-        item {
-            HomeHeader(
-                loading = loading,
-                onRefresh = { vm.refresh() },
-            )
-        }
+        // Soft decorative flower dots (top corners)
+        FlowerDots(modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 12.dp))
 
-        if (loading && feed == null) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
+            contentPadding = PaddingValues(bottom = 108.dp),
+        ) {
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(48.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator()
-                }
+                HomeGreetingHeader(
+                    loading = loading,
+                    onRefresh = { vm.refresh() },
+                )
             }
-        }
 
-        if (error != null && feed == null) {
             item {
-                Column(Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) {
-                    Text(
-                        text = error.orEmpty(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = scheme.error,
-                    )
-                    TextButton(onClick = { vm.refresh() }) {
-                        Text("Thử lại")
+                HeroCatBanner(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                )
+            }
+
+            if (loading && feed == null) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(48.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(color = HomeMeadow.Blush)
                     }
                 }
             }
-        }
 
-        feed?.let { home ->
-            item { SectionTitle(home.recommendations.title) }
-            if (home.recommendations.items.isNotEmpty()) {
+            if (error != null && feed == null) {
                 item {
-                    RecommendationRow(
-                        items = home.recommendations.items.filterIsInstance<BrowseItem.TrackItem>(),
-                        onPlay = onPlayTrack,
-                    )
+                    Column(Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) {
+                        Text(
+                            text = error.orEmpty(),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = HomeMeadow.RankPink,
+                        )
+                        TextButton(onClick = { vm.refresh() }) {
+                            Text("Thử lại", color = HomeMeadow.GrassDeep)
+                        }
+                    }
                 }
             }
 
-            item {
-                Spacer(Modifier.height(12.dp))
-                SectionTitle("Hàng đầu")
-            }
-
-            item { SectionTitle(home.topSongs.title) }
-            if (home.topSongs.items.isNotEmpty()) {
-                items(
-                    home.topSongs.items.filterIsInstance<BrowseItem.TrackItem>(),
-                    key = { "song-${it.id}" },
-                ) { item ->
-                    RankedTrackRow(
-                        item = item,
-                        onClick = { onPlayTrack(item.track) },
+            feed?.let { home ->
+                item {
+                    MeadowSectionTitle(
+                        title = home.recommendations.title.ifBlank { "Dành cho bạn" },
+                        emoji = "🎧",
                     )
                 }
-            }
+                if (home.recommendations.items.isNotEmpty()) {
+                    item {
+                        RecommendationRow(
+                            items = home.recommendations.items.filterIsInstance<BrowseItem.TrackItem>(),
+                            onPlay = onPlayTrack,
+                        )
+                    }
+                }
 
-            item {
-                Spacer(Modifier.height(8.dp))
-                SectionTitle(home.topArtists.title)
-            }
-            if (home.topArtists.items.isNotEmpty()) {
                 item {
-                    ArtistRow(
-                        items = home.topArtists.items.filterIsInstance<BrowseItem.ArtistItem>(),
-                        onClick = onArtistClick,
+                    Spacer(Modifier.height(8.dp))
+                    MeadowSectionTitle(
+                        title = "Hàng đầu",
+                        emoji = "🌸",
+                        subtitle = home.chartDateLabel ?: home.topSongs.subtitle,
                     )
+                }
+
+                item {
+                    MeadowSectionTitle(
+                        title = home.topSongs.title.ifBlank { "Bài hát hàng đầu" },
+                        compact = true,
+                    )
+                }
+                if (home.topSongs.items.isNotEmpty()) {
+                    items(
+                        home.topSongs.items.filterIsInstance<BrowseItem.TrackItem>(),
+                        key = { "song-${it.id}" },
+                    ) { item ->
+                        RankedTrackRow(
+                            item = item,
+                            onClick = { onPlayTrack(item.track) },
+                        )
+                    }
+                }
+
+                item {
+                    Spacer(Modifier.height(12.dp))
+                    MeadowSectionTitle(
+                        title = home.topArtists.title.ifBlank { "Nghệ sĩ hàng đầu" },
+                        emoji = "🌿",
+                    )
+                }
+                if (home.topArtists.items.isNotEmpty()) {
+                    item {
+                        ArtistRow(
+                            items = home.topArtists.items.filterIsInstance<BrowseItem.ArtistItem>(),
+                            onClick = onArtistClick,
+                        )
+                    }
                 }
             }
         }
@@ -147,61 +216,218 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HomeHeader(
+private fun FlowerDots(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        listOf(
+            HomeMeadow.Blush,
+            HomeMeadow.BlushSoft,
+            HomeMeadow.GrassMid.copy(alpha = 0.55f),
+            HomeMeadow.Blush.copy(alpha = 0.7f),
+        ).forEachIndexed { i, c ->
+            Box(
+                modifier = Modifier
+                    .offset(y = (i % 2 * 4).dp)
+                    .size((8 + i % 3 * 3).dp)
+                    .clip(CircleShape)
+                    .background(c),
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeGreetingHeader(
     loading: Boolean,
     onRefresh: () -> Unit,
 ) {
-    val scheme = MaterialTheme.colorScheme
+    val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+    val greet = when (hour) {
+        in 5..10 -> "Chào buổi sáng"
+        in 11..13 -> "Chào buổi trưa"
+        in 14..17 -> "Chào buổi chiều"
+        else -> "Chào buổi tối"
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .padding(top = 16.dp, bottom = 8.dp),
+            .padding(horizontal = 20.dp)
+            .padding(top = 12.dp, bottom = 4.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "Trang chủ",
-                style = MaterialTheme.typography.displayLarge,
-                color = scheme.onSurface,
-                modifier = Modifier.weight(1f),
-            )
-            IconButton(onClick = onRefresh, enabled = !loading) {
-                if (loading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(22.dp),
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    Icon(
-                        Icons.Outlined.Refresh,
-                        contentDescription = "Làm mới",
-                        tint = scheme.onSurface,
-                    )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = greet,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = HomeMeadow.InkMuted,
+                )
+                Text(
+                    text = "OpenWave",
+                    style = MaterialTheme.typography.displayLarge.copy(
+                        fontSize = 34.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.5).sp,
+                    ),
+                    color = HomeMeadow.Ink,
+                )
+            }
+            Surface(
+                onClick = onRefresh,
+                enabled = !loading,
+                shape = CircleShape,
+                color = HomeMeadow.CreamCard,
+                shadowElevation = 2.dp,
+                modifier = Modifier.size(44.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    if (loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = HomeMeadow.Blush,
+                        )
+                    } else {
+                        Icon(
+                            Icons.Outlined.Refresh,
+                            contentDescription = "Làm mới",
+                            tint = HomeMeadow.GrassDeep,
+                        )
+                    }
                 }
             }
         }
         if (loading) {
             Spacer(Modifier.height(10.dp))
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(4.dp)),
+                color = HomeMeadow.Blush,
+                trackColor = HomeMeadow.BlushPale,
+            )
         }
     }
 }
 
 @Composable
-private fun SectionTitle(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.headlineSmall,
-        color = MaterialTheme.colorScheme.onSurface,
+private fun HeroCatBanner(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 10.dp,
+                shape = RoundedCornerShape(28.dp),
+                ambientColor = HomeMeadow.GrassDeep.copy(alpha = 0.18f),
+                spotColor = HomeMeadow.Blush.copy(alpha = 0.25f),
+            )
+            .clip(RoundedCornerShape(28.dp)),
+    ) {
+        Image(
+            painter = painterResource(R.drawable.home_hero_cat),
+            contentDescription = "Mèo đeo tai nghe giữa vườn hoa",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1.15f),
+        )
+        // Soft bottom gradient for caption legibility
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0.45f to Color.Transparent,
+                            0.78f to Color(0x66000000),
+                            1f to Color(0x99000000),
+                        ),
+                    ),
+                ),
+        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(18.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = HomeMeadow.BlushPale.copy(alpha = 0.92f),
+                ) {
+                    Icon(
+                        Icons.Outlined.Headphones,
+                        contentDescription = null,
+                        tint = HomeMeadow.RankPink,
+                        modifier = Modifier.padding(8.dp).size(18.dp),
+                    )
+                }
+                Text(
+                    text = "Nghe nhạc thảnh thơi",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Tai nghe sẵn sàng · hoa nở quanh vườn",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.88f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MeadowSectionTitle(
+    title: String,
+    emoji: String? = null,
+    subtitle: String? = null,
+    compact: Boolean = false,
+) {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .padding(top = 16.dp, bottom = 10.dp),
-    )
+            .padding(horizontal = 20.dp)
+            .padding(
+                top = if (compact) 6.dp else 18.dp,
+                bottom = if (compact) 6.dp else 10.dp,
+            ),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (emoji != null) {
+                Text(text = emoji, fontSize = 18.sp)
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(
+                text = title,
+                style = if (compact) {
+                    MaterialTheme.typography.titleMedium
+                } else {
+                    MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+                },
+                color = HomeMeadow.Ink,
+            )
+        }
+        if (!subtitle.isNullOrBlank()) {
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = HomeMeadow.InkMuted,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
 }
 
 @Composable
@@ -211,7 +437,7 @@ private fun RecommendationRow(
 ) {
     LazyRow(
         contentPadding = PaddingValues(horizontal = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         items(items, key = { it.id }) { item ->
             RecommendCard(item = item, onClick = { onPlay(item.track) })
@@ -224,45 +450,68 @@ private fun RecommendCard(
     item: BrowseItem.TrackItem,
     onClick: () -> Unit,
 ) {
-    val scheme = MaterialTheme.colorScheme
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
-        color = scheme.surfaceVariant,
-        modifier = Modifier.width(148.dp),
+    Column(
+        modifier = Modifier
+            .width(152.dp)
+            .shadow(
+                elevation = 6.dp,
+                shape = RoundedCornerShape(22.dp),
+                ambientColor = HomeMeadow.GrassDeep.copy(alpha = 0.12f),
+                spotColor = HomeMeadow.Blush.copy(alpha = 0.2f),
+            )
+            .clip(RoundedCornerShape(22.dp))
+            .background(HomeMeadow.CreamCard)
+            .clickable(onClick = onClick),
     ) {
-        Column {
-            Box(
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .background(HomeMeadow.GrassSoft),
+        ) {
+            if (item.coverUrl != null) {
+                AsyncImage(
+                    model = item.coverUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Text(
+                    text = item.title.take(1).uppercase(Locale.getDefault()),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = HomeMeadow.GrassDeep,
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
+            // Soft play pill
+            Surface(
+                shape = CircleShape,
+                color = HomeMeadow.CreamCard.copy(alpha = 0.92f),
+                shadowElevation = 2.dp,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .background(scheme.primaryContainer),
+                    .align(Alignment.BottomEnd)
+                    .padding(10.dp)
+                    .size(36.dp),
             ) {
-                if (item.coverUrl != null) {
-                    AsyncImage(
-                        model = item.coverUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    Text(
-                        text = item.title.take(1).uppercase(Locale.getDefault()),
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = scheme.onPrimaryContainer,
-                        modifier = Modifier.align(Alignment.Center),
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Icon(
+                        Icons.Filled.PlayArrow,
+                        contentDescription = "Phát",
+                        tint = HomeMeadow.RankPink,
+                        modifier = Modifier.size(22.dp),
                     )
                 }
             }
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                color = scheme.onSurface,
-                modifier = Modifier.padding(10.dp),
-            )
         }
+        Text(
+            text = item.title,
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            color = HomeMeadow.Ink,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+        )
     }
 }
 
@@ -271,26 +520,34 @@ private fun RankedTrackRow(
     item: BrowseItem.TrackItem,
     onClick: () -> Unit,
 ) {
-    val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .shadow(
+                elevation = 2.dp,
+                shape = RoundedCornerShape(18.dp),
+                ambientColor = HomeMeadow.GrassDeep.copy(alpha = 0.08f),
+            )
+            .clip(RoundedCornerShape(18.dp))
+            .background(HomeMeadow.CreamCard.copy(alpha = 0.92f))
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
             text = (item.rank ?: 0).toString().padStart(2, '0'),
-            style = MaterialTheme.typography.titleMedium,
-            color = scheme.primary,
-            modifier = Modifier.width(28.dp),
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            color = HomeMeadow.RankPink,
+            modifier = Modifier.width(30.dp),
         )
         Box(
             modifier = Modifier
                 .size(52.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(scheme.surfaceVariant),
+                .clip(RoundedCornerShape(14.dp))
+                .background(HomeMeadow.GrassSoft)
+                .border(1.5.dp, HomeMeadow.BlushSoft.copy(alpha = 0.55f), RoundedCornerShape(14.dp)),
             contentAlignment = Alignment.Center,
         ) {
             if (item.coverUrl != null) {
@@ -304,17 +561,28 @@ private fun RankedTrackRow(
                 Text(
                     item.title.take(1).uppercase(Locale.getDefault()),
                     style = MaterialTheme.typography.titleMedium,
-                    color = scheme.primary,
+                    color = HomeMeadow.GrassDeep,
                 )
             }
         }
-        Text(
-            text = item.title,
-            style = MaterialTheme.typography.titleMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = HomeMeadow.Ink,
+            )
+            item.subtitle?.takeIf { it.isNotBlank() }?.let { sub ->
+                Text(
+                    text = sub,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = HomeMeadow.InkMuted,
+                )
+            }
+        }
     }
 }
 
@@ -341,18 +609,23 @@ private fun ArtistAvatar(
     item: BrowseItem.ArtistItem,
     onClick: () -> Unit,
 ) {
-    val scheme = MaterialTheme.colorScheme
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(96.dp)
+            .width(100.dp)
             .clickable(onClick = onClick),
     ) {
         Box(
             modifier = Modifier
-                .size(80.dp)
+                .size(88.dp)
+                .shadow(
+                    elevation = 6.dp,
+                    shape = CircleShape,
+                    ambientColor = HomeMeadow.Blush.copy(alpha = 0.25f),
+                )
                 .clip(CircleShape)
-                .background(scheme.primaryContainer),
+                .border(3.dp, HomeMeadow.BlushSoft, CircleShape)
+                .background(HomeMeadow.GrassSoft),
             contentAlignment = Alignment.Center,
         ) {
             if (item.coverUrl != null) {
@@ -366,17 +639,17 @@ private fun ArtistAvatar(
                 Text(
                     text = item.title.take(1).uppercase(Locale.getDefault()),
                     style = MaterialTheme.typography.headlineSmall,
-                    color = scheme.onPrimaryContainer,
+                    color = HomeMeadow.GrassDeep,
                 )
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
             text = item.title,
             style = MaterialTheme.typography.labelLarge,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            color = scheme.onSurface,
+            color = HomeMeadow.Ink,
         )
     }
 }
