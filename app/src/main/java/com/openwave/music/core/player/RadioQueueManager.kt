@@ -4,6 +4,7 @@ import android.util.Log
 import com.openwave.music.core.domain.FastMusicCatalog
 import com.openwave.music.core.domain.PlaybackState
 import com.openwave.music.core.domain.Track
+import com.openwave.music.features.OfflineRepository
 import com.openwave.music.features.station.StationRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,10 +35,12 @@ class RadioQueueManager @Inject constructor(
     private val player: PlayerController,
     private val catalog: FastMusicCatalog,
     private val stations: StationRepository,
+    private val offline: OfflineRepository,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mutex = Mutex()
     private var fillJob: Job? = null
+    @Volatile private var started = false
 
     private val _autoContinue = MutableStateFlow(true)
     val autoContinue: StateFlow<Boolean> = _autoContinue.asStateFlow()
@@ -54,12 +57,19 @@ class RadioQueueManager @Inject constructor(
     private val playedIds = linkedSetOf<String>()
 
     fun start() {
+        if (started) return
+        started = true
         scope.launch {
             player.snapshot
                 .map { it.state to (it.track?.id ?: "") }
                 .distinctUntilChanged()
                 .collectLatest { (state, id) ->
-                    if (id.isNotBlank()) playedIds += id
+                    if (id.isNotBlank()) {
+                        playedIds += id
+                        while (playedIds.size > MAX_PLAYED) {
+                            playedIds.remove(playedIds.first())
+                        }
+                    }
                     if (state == PlaybackState.ENDED && _autoContinue.value) {
                         onTrackEndedNeedMore()
                     }
@@ -121,8 +131,11 @@ class RadioQueueManager @Inject constructor(
                     Log.w(TAG, "station empty for ${seed.id}")
                     return@launch
                 }
-                player.playResolved(resolved, startIndex = 0, fullQueue = queueTracks)
-                // Append more unresolved later via prefill
+                player.playResolved(
+                    resolved,
+                    startIndex = 0,
+                    fullQueue = resolved.map { it.track },
+                )
                 if (queueTracks.size > resolved.size) {
                     val rest = queueTracks.drop(resolved.size)
                     appendResolved(rest, maxResolve = PRELOAD)
@@ -143,12 +156,10 @@ class RadioQueueManager @Inject constructor(
     }
 
     private suspend fun ensureUpcoming(seed: Track, playImmediately: Boolean) {
-        if (mutex.isLocked) return
-        mutex.withLock {
+        if (!mutex.tryLock()) return
+        try {
             if (player.hasNext() && !playImmediately) return
             _isBuilding.value = true
-        }
-        try {
             val related = stations.buildStation(seed, limit = STATION_SIZE)
                 .filter { it.id != seed.id && it.id !in playedIds }
             if (related.isEmpty()) {
@@ -163,7 +174,6 @@ class RadioQueueManager @Inject constructor(
             if (playImmediately && !player.hasNext()) {
                 val resolved = resolveMany(related, maxResolve = PRELOAD)
                 if (resolved.isEmpty()) return
-                // Continue from first related as new session start of radio chain
                 player.playResolved(resolved, 0, related)
                 if (related.size > resolved.size) {
                     appendResolved(related.drop(resolved.size), PRELOAD)
@@ -175,25 +185,32 @@ class RadioQueueManager @Inject constructor(
             Log.e(TAG, "ensureUpcoming: ${t.message}", t)
         } finally {
             _isBuilding.value = false
+            mutex.unlock()
         }
     }
 
     private suspend fun appendResolved(tracks: List<Track>, maxResolve: Int) {
         val resolved = resolveMany(tracks, maxResolve)
         if (resolved.isNotEmpty()) {
-            player.appendResolved(resolved, fullQueueTail = tracks)
+            player.appendResolved(resolved, fullQueueTail = resolved.map { it.track })
         }
     }
 
     private suspend fun resolveMany(
         tracks: List<Track>,
         maxResolve: Int,
-    ): List<Pair<Track, String>> = coroutineScope {
+    ): List<ResolvedStream> = coroutineScope {
         tracks.take(maxResolve).map { t ->
             async(Dispatchers.IO) {
                 runCatching {
-                    val stream = catalog.resolveStreamFast(t)
-                    t to stream.url
+                    val local = offline.localStreamPath(t.id)
+                    if (local != null) {
+                        val url = if (local.startsWith("/")) "file://$local" else local
+                        ResolvedStream(t, url)
+                    } else {
+                        val stream = catalog.resolveStreamFast(t)
+                        ResolvedStream(t, stream.url, stream.headers)
+                    }
                 }.getOrNull()
             }
         }.awaitAll().filterNotNull()
@@ -203,5 +220,6 @@ class RadioQueueManager @Inject constructor(
         private const val TAG = "RadioQueue"
         private const val STATION_SIZE = 24
         private const val PRELOAD = 6
+        private const val MAX_PLAYED = 500
     }
 }

@@ -89,7 +89,6 @@ fun OpenWaveNavHost(
     val isResolving by playerVm.isResolving.collectAsStateWithLifecycle()
     val playError by playerVm.playError.collectAsStateWithLifecycle()
     val sleepState by playerVm.sleepState.collectAsStateWithLifecycle()
-    val crossfade by playerVm.crossfadeSettings.collectAsStateWithLifecycle()
     val stationActive by playerVm.stationActive.collectAsStateWithLifecycle()
     val stationBuilding by playerVm.stationBuilding.collectAsStateWithLifecycle()
     var showFullPlayer by remember { mutableStateOf(false) }
@@ -122,10 +121,8 @@ fun OpenWaveNavHost(
             stationBuilding = stationBuilding,
             voteLabel = voteLabel,
             sleepState = sleepState,
-            crossfade = crossfade,
             onSleepDurationMs = playerVm::startSleepTimer,
             onCancelSleep = playerVm::cancelSleepTimer,
-            onCrossfade = playerVm::setCrossfade,
             modifier = Modifier.fillMaxSize(),
         )
         return

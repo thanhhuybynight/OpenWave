@@ -2,6 +2,7 @@ package com.openwave.music.core.di
 
 import android.content.Context
 import androidx.room.Room
+import com.openwave.music.BuildConfig
 import com.openwave.music.core.domain.AggregatorConfig
 import com.openwave.music.core.domain.FastMusicCatalog
 import com.openwave.music.core.domain.MusicCatalog
@@ -34,22 +35,28 @@ object AppModule {
     @Provides
     @Singleton
     fun provideOkHttp(): OkHttpClient {
-        val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BASIC
-        }
-        return OkHttpClient.Builder()
+        val builder = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .callTimeout(45, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
-            .addInterceptor(logging)
-            .build()
+        // Never log request/response bodies or URLs in release builds
+        if (BuildConfig.DEBUG) {
+            builder.addInterceptor(
+                HttpLoggingInterceptor().apply {
+                    level = HttpLoggingInterceptor.Level.BASIC
+                },
+            )
+        }
+        return builder.build()
     }
 
     @Provides
     @Singleton
     fun provideDb(@ApplicationContext context: Context): OpenWaveDatabase =
         Room.databaseBuilder(context, OpenWaveDatabase::class.java, "openwave.db")
+            // Alpha: wipe on schema change rather than silent corrupt migrations.
+            // Bump OpenWaveDatabase.version + add Migration when shipping stable.
             .fallbackToDestructiveMigration()
             .build()
 
@@ -68,7 +75,12 @@ object AppModule {
         yt: YouTubeMusicSourceClient,
         sc: SoundCloudSourceClient,
         demo: DemoSourceClient,
-    ): Set<@JvmSuppressWildcards MusicSourceClient> = setOf(yt, sc, demo)
+    ): Set<@JvmSuppressWildcards MusicSourceClient> = buildSet {
+        add(yt)
+        add(sc)
+        // Demo catalog only in debug — never pollute release search with fake tracks
+        if (BuildConfig.DEBUG) add(demo)
+    }
 
     @Provides
     @Singleton

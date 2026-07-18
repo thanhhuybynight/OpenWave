@@ -43,7 +43,6 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     val autoContinue by vm.autoContinue.collectAsStateWithLifecycle()
-    val crossfade by vm.crossfadeSettings.collectAsStateWithLifecycle()
     val scheme = MaterialTheme.colorScheme
     val context = LocalContext.current
 
@@ -84,11 +83,7 @@ fun SettingsScreen(
                 checked = autoContinue,
                 onCheckedChange = vm::setAutoContinue,
             )
-            SettingsSwitchRow(
-                title = "Crossfade",
-                checked = crossfade.enabled,
-                onCheckedChange = vm::setCrossfade,
-            )
+            // Crossfade toggle hidden until dual-player blend is real (settings were no-op)
 
             Spacer(Modifier.height(20.dp))
             HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))

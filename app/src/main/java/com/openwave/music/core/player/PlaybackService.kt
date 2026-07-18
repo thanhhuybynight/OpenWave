@@ -17,12 +17,14 @@ import androidx.media3.session.MediaSessionService
 import com.openwave.music.MainActivity
 import com.openwave.music.OpenWaveApp
 import dagger.hilt.android.AndroidEntryPoint
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 /**
- * Foreground media playback with OkHttp data source (YouTube CDN headers).
+ * Foreground media playback with OkHttp data source.
+ * Stream headers are applied per-URL (SoundCloud vs YouTube CDN).
  */
 @UnstableApi
 @AndroidEntryPoint
@@ -41,25 +43,16 @@ class PlaybackService : MediaSessionService() {
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
-        // YouTube / SoundCloud progressive streams often need browser-like headers
         val streamHttp = okHttp.newBuilder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
+            .addInterceptor(streamHeadersInterceptor())
             .build()
 
         val httpFactory = OkHttpDataSource.Factory(streamHttp)
             .setUserAgent(STREAM_USER_AGENT)
-            .setDefaultRequestProperties(
-                mapOf(
-                    "Accept" to "*/*",
-                    "Accept-Language" to "en-US,en;q=0.9",
-                    // Covers both YT Music CDN and SoundCloud cf-media
-                    "Origin" to "https://music.youtube.com",
-                    "Referer" to "https://music.youtube.com/",
-                ),
-            )
 
         val dataSourceFactory = DefaultDataSource.Factory(this, httpFactory)
         val mediaSourceFactory = DefaultMediaSourceFactory(this)
@@ -127,6 +120,21 @@ class PlaybackService : MediaSessionService() {
         const val STREAM_USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+
+        fun streamHeadersInterceptor(): Interceptor = Interceptor { chain ->
+            val original = chain.request()
+            val url = original.url.toString()
+            val host = original.url.host
+            val registered = StreamRequestHeaders.forUrl(url)
+            val defaults = defaultHeadersForHost(host)
+            val merged = defaults + registered // registered wins
+            val builder = original.newBuilder()
+            // Drop stale global Origin/Referer then apply merged
+            builder.removeHeader("Origin")
+            builder.removeHeader("Referer")
+            merged.forEach { (k, v) -> builder.header(k, v) }
+            chain.proceed(builder.build())
+        }
     }
 }
 
@@ -139,6 +147,9 @@ object MediaItemFactory {
         artworkUri: String? = null,
         httpHeaders: Map<String, String> = emptyMap(),
     ): MediaItem {
+        if (httpHeaders.isNotEmpty()) {
+            StreamRequestHeaders.register(streamUrl, httpHeaders)
+        }
         val metadata = androidx.media3.common.MediaMetadata.Builder()
             .setTitle(title)
             .setArtist(artist)

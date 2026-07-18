@@ -21,8 +21,9 @@ class SponsorBlockClientImpl @Inject constructor(
 
     override suspend fun segments(videoId: String): List<SkipSegment> = withContext(Dispatchers.IO) {
         if (videoId.isBlank()) return@withContext emptyList()
+        // Music-safe: skip ads/promo only. intro/outro/music_offtopic cut real songs.
         val url =
-            "https://sponsor.ajay.app/api/skipSegments?videoID=$videoId&categories=[\"sponsor\",\"intro\",\"outro\",\"selfpromo\",\"music_offtopic\"]"
+            "https://sponsor.ajay.app/api/skipSegments?videoID=$videoId&categories=[\"sponsor\",\"selfpromo\",\"interaction\",\"exclusive_access\"]"
         runCatching {
             val req = Request.Builder().url(url).get().build()
             http.newCall(req).execute().use { resp ->

@@ -1,11 +1,11 @@
 package com.openwave.music.core.player
 
-import com.openwave.music.core.domain.PlaybackState
+import com.openwave.music.core.domain.ArtistNameSplitter
 import com.openwave.music.core.domain.PlayEvent
+import com.openwave.music.core.domain.PlaybackState
 import com.openwave.music.core.domain.SkipSegment
 import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.VoteStats
-import com.openwave.music.core.domain.ArtistNameSplitter
 import com.openwave.music.data.source.youtube.YouTubeMusicSourceClient
 import com.openwave.music.data.source.youtube.YtmCreditsClient
 import com.openwave.music.features.LibraryRepository
@@ -30,7 +30,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Side-effects around playback: scrobble, SponsorBlock skip, RYD votes.
+ * Side-effects around playback: scrobble, history, SponsorBlock skip, RYD votes.
+ * History is written once per listen (on end or skip), never at play start.
  */
 @Singleton
 class PlaybackCoordinator @Inject constructor(
@@ -48,6 +49,8 @@ class PlaybackCoordinator @Inject constructor(
     private var listenStartMs: Long = 0L
     private var accumulatedListenMs: Long = 0L
     private var lastTrackId: String? = null
+    private var lastTrack: Track? = null
+    private var finalizedForId: String? = null
 
     private val _votes = MutableStateFlow<VoteStats?>(null)
     val votes: StateFlow<VoteStats?> = _votes.asStateFlow()
@@ -77,13 +80,15 @@ class PlaybackCoordinator @Inject constructor(
     }
 
     private suspend fun onNewTrack(track: Track) {
-        // finalize previous
-        lastTrackId?.let { prev ->
-            if (accumulatedListenMs > 0) {
-                // no track object; skip
+        // Finalize previous listen when user skips / changes track (not double-count ENDED)
+        lastTrack?.let { prev ->
+            if (prev.id != track.id && finalizedForId != prev.id && accumulatedListenMs > 0L) {
+                finalizePlay(prev, completed = false)
             }
         }
         lastTrackId = track.id
+        lastTrack = track
+        finalizedForId = null
         listenStartMs = System.currentTimeMillis()
         accumulatedListenMs = 0L
         scrobble.onTrackStarted(track)
@@ -98,16 +103,29 @@ class PlaybackCoordinator @Inject constructor(
         if (videoId != null) {
             scope.launch(Dispatchers.IO) {
                 _votes.value = runCatching { ryd.votes(videoId) }.getOrNull()
+                // Music-safe categories only (no intro/outro/music_offtopic that cut songs)
                 segments = runCatching { sponsorBlock.segments(videoId) }.getOrDefault(emptyList())
+                    .filter { it.category in SKIP_CATEGORIES }
                 _segments.value = segments
             }
         }
     }
 
     private suspend fun onEnded(track: Track) {
-        val listened = accumulatedListenMs +
-            (System.currentTimeMillis() - listenStartMs).coerceAtLeast(0L)
-        scrobble.onTrackEnded(track, listened, track.durationMs.coerceAtLeast(listened))
+        finalizePlay(track, completed = true)
+        accumulatedListenMs = 0L
+    }
+
+    private suspend fun finalizePlay(track: Track, completed: Boolean) {
+        if (finalizedForId == track.id) return
+        finalizedForId = track.id
+        val wall = (System.currentTimeMillis() - listenStartMs).coerceAtLeast(0L)
+        val cap = track.durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE
+        val effective = maxOf(accumulatedListenMs, wall).coerceAtMost(cap)
+        scrobble.onTrackEnded(track, effective, track.durationMs.coerceAtLeast(effective))
+        // Skip history for accidental <3s taps (still scrobble-notified above)
+        if (effective < MIN_HISTORY_MS && !completed) return
+
         val credited = withContext(Dispatchers.IO) {
             val videoId = YouTubeMusicSourceClient.extractVideoId(track.id)
                 ?: YouTubeMusicSourceClient.extractVideoId(track.sourceUri.orEmpty())
@@ -128,12 +146,12 @@ class PlaybackCoordinator @Inject constructor(
                 source = credited.source,
                 playedAtMs = System.currentTimeMillis(),
                 durationMs = credited.durationMs,
-                listenedMs = listened,
-                completed = true,
+                listenedMs = effective,
+                completed = completed ||
+                    (credited.durationMs > 0 && effective >= credited.durationMs * 0.9),
                 coverUrl = credited.coverUrl,
             ),
         )
-        accumulatedListenMs = 0L
     }
 
     private fun ensureTicker() {
@@ -148,7 +166,6 @@ class PlaybackCoordinator @Inject constructor(
                         accumulatedListenMs += (pos - lastPos).coerceAtMost(2_000L)
                     }
                     lastPos = pos
-                    // SponsorBlock auto-skip
                     val hit = segments.firstOrNull { pos in it.startMs until it.endMs }
                     if (hit != null) {
                         player.seekTo(hit.endMs + 50)
@@ -158,5 +175,15 @@ class PlaybackCoordinator @Inject constructor(
                 delay(500L)
             }
         }
+    }
+
+    companion object {
+        private const val MIN_HISTORY_MS = 3_000L
+        private val SKIP_CATEGORIES = setOf(
+            "sponsor",
+            "selfpromo",
+            "interaction",
+            "exclusive_access",
+        )
     }
 }

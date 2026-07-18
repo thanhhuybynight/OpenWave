@@ -2,26 +2,20 @@ package com.openwave.music.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.openwave.music.core.domain.CrossfadeSettings
+import com.openwave.music.core.domain.ArtistNameSplitter
 import com.openwave.music.core.domain.FastMusicCatalog
 import com.openwave.music.core.domain.MusicSource
-import com.openwave.music.core.domain.PlayEvent
 import com.openwave.music.core.domain.SearchBatch
 import com.openwave.music.core.domain.SleepTimerState
 import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.UnifiedTrack
-import com.openwave.music.core.domain.VoteStats
 import com.openwave.music.core.player.PlaybackCoordinator
 import com.openwave.music.core.player.PlayerController
 import com.openwave.music.core.player.RadioQueueManager
-import com.openwave.music.core.domain.ArtistNameSplitter
-import com.openwave.music.data.source.DemoSourceClient
+import com.openwave.music.core.player.ResolvedStream
 import com.openwave.music.data.source.youtube.YouTubeMusicSourceClient
 import com.openwave.music.data.source.youtube.YtmCreditsClient
-import com.openwave.music.features.CrossfadeController
-import com.openwave.music.features.LibraryRepository
 import com.openwave.music.features.OfflineRepository
-import com.openwave.music.features.ScrobbleRepository
 import com.openwave.music.features.SleepTimer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
@@ -43,21 +37,16 @@ import javax.inject.Inject
 class PlayerViewModel @Inject constructor(
     private val player: PlayerController,
     private val catalog: FastMusicCatalog,
-    private val demo: DemoSourceClient,
-    private val scrobble: ScrobbleRepository,
-    private val library: LibraryRepository,
     private val offline: OfflineRepository,
     private val sleepTimer: SleepTimer,
-    private val crossfade: CrossfadeController,
     private val radio: RadioQueueManager,
     private val ytmCredits: YtmCreditsClient,
     coordinator: PlaybackCoordinator,
 ) : ViewModel() {
 
     val snapshot = player.snapshot
-    val votes: StateFlow<VoteStats?> = coordinator.votes
+    val votes = coordinator.votes
     val sleepState: StateFlow<SleepTimerState> = sleepTimer.state
-    val crossfadeSettings: StateFlow<CrossfadeSettings> = crossfade.settings
     val autoContinue: StateFlow<Boolean> = radio.autoContinue
     val stationActive: StateFlow<Boolean> = radio.stationActive
     val stationLabel: StateFlow<String?> = radio.stationLabel
@@ -98,12 +87,6 @@ class PlayerViewModel @Inject constructor(
 
     fun cancelSleepTimer() = sleepTimer.cancel()
 
-    fun setCrossfade(enabled: Boolean, durationSec: Int = 8) {
-        crossfade.update(
-            CrossfadeSettings(enabled = enabled, durationMs = durationSec * 1000),
-        )
-    }
-
     fun togglePlayPause() = player.togglePlayPause()
 
     fun seekTo(ms: Long) = player.seekTo(ms)
@@ -117,13 +100,6 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun cycleRepeat() = player.cycleRepeat()
-
-    fun playDemo() {
-        viewModelScope.launch {
-            val track = demo.getTrack("demo-1") ?: return@launch
-            playTrack(track)
-        }
-    }
 
     /** Play top search hit for an artist name (chart artist tap). */
     fun playArtist(artistName: String) {
@@ -158,29 +134,25 @@ class PlayerViewModel @Inject constructor(
                     _playError.value = "Player not ready. Try again."
                     return@launch
                 }
-                // Resolve real YTM performers (not only first uploader) before history write
+                // Resolve real YTM performers before play; history is written once on end
+                // (PlaybackCoordinator) to avoid double-counting stats.
                 val credited = enrichCredits(track)
                 val local = offline.localStreamPath(credited.id)
+                val stream = if (local != null) {
+                    null
+                } else {
+                    catalog.resolveStreamFast(credited, alternates)
+                }
                 val url = if (local != null) {
                     if (local.startsWith("/")) "file://$local" else local
                 } else {
-                    catalog.resolveStreamFast(credited, alternates).url
+                    stream!!.url
                 }
-                player.play(credited, url, newQueue = listOf(credited) + alternates)
-                scrobble.onTrackStarted(credited)
-                library.recordPlay(
-                    PlayEvent(
-                        trackId = credited.id,
-                        title = credited.title,
-                        artist = ArtistNameSplitter.encodeFromArtists(credited.artists)
-                            .ifBlank { credited.artists.joinToString { it.name } },
-                        source = credited.source,
-                        playedAtMs = System.currentTimeMillis(),
-                        durationMs = credited.durationMs,
-                        listenedMs = 0L,
-                        completed = false,
-                        coverUrl = credited.coverUrl,
-                    ),
+                player.play(
+                    credited,
+                    url,
+                    newQueue = listOf(credited) + alternates,
+                    headers = stream?.headers.orEmpty(),
                 )
             } catch (t: Throwable) {
                 _playError.value = t.message?.take(120) ?: "Could not play track"
@@ -246,12 +218,16 @@ class PlayerViewModel @Inject constructor(
                     return@launch
                 }
                 val local = offline.localStreamPath(track.id)
+                val stream = if (local != null) null else catalog.resolveStreamFast(track, alternates)
                 val url = if (local != null) {
                     if (local.startsWith("/")) "file://$local" else local
                 } else {
-                    catalog.resolveStreamFast(track, alternates).url
+                    stream!!.url
                 }
-                player.appendResolved(listOf(track to url), fullQueueTail = listOf(track))
+                player.appendResolved(
+                    listOf(ResolvedStream(track, url, stream?.headers.orEmpty())),
+                    fullQueueTail = listOf(track),
+                )
             } catch (t: Throwable) {
                 _playError.value = t.message?.take(120) ?: "Could not add to queue"
             }
@@ -272,21 +248,48 @@ class PlayerViewModel @Inject constructor(
                     _playError.value = "Player not ready"
                     return@launch
                 }
-                val resolved = coroutineScope {
-                    tracks.map { t ->
-                        async {
-                            val local = offline.localStreamPath(t.id)
-                            val url = if (local != null) {
-                                if (local.startsWith("/")) "file://$local" else local
-                            } else {
-                                catalog.resolveStreamFast(t).url
-                            }
-                            t to url
-                        }
-                    }.awaitAll()
+                // Resolve window: prefer start track first, then neighbors; skip failures
+                val ordered = buildList {
+                    add(startIndex.coerceIn(0, tracks.lastIndex))
+                    tracks.indices.forEach { if (it != startIndex) add(it) }
                 }
-                player.playResolved(resolved, startIndex, tracks)
-                tracks.getOrNull(startIndex)?.let { scrobble.onTrackStarted(it) }
+                val resolved = coroutineScope {
+                    ordered.map { idx ->
+                        async {
+                            val t = tracks[idx]
+                            runCatching {
+                                val local = offline.localStreamPath(t.id)
+                                if (local != null) {
+                                    val url = if (local.startsWith("/")) "file://$local" else local
+                                    idx to ResolvedStream(t, url)
+                                } else {
+                                    val s = catalog.resolveStreamFast(t)
+                                    idx to ResolvedStream(t, s.url, s.headers)
+                                }
+                            }.getOrNull()
+                        }
+                    }.awaitAll().filterNotNull()
+                }
+                if (resolved.isEmpty()) {
+                    _playError.value = "Could not resolve any track in queue"
+                    return@launch
+                }
+                // Preserve original queue order; drop tracks that failed resolve
+                val orderedResolved = tracks.mapNotNull { t ->
+                    resolved.firstOrNull { it.second.track.id == t.id }?.second
+                }
+                if (orderedResolved.isEmpty()) {
+                    _playError.value = "Could not resolve any track in queue"
+                    return@launch
+                }
+                val newStart = orderedResolved.indexOfFirst {
+                    it.track.id == tracks.getOrNull(startIndex)?.id
+                }.coerceAtLeast(0)
+                player.playResolved(
+                    orderedResolved,
+                    newStart,
+                    orderedResolved.map { it.track },
+                )
             } catch (t: Throwable) {
                 _playError.value = t.message?.take(120) ?: "Queue failed"
             } finally {

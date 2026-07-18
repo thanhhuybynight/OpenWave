@@ -32,6 +32,13 @@ import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** Resolved stream ready for Media3 (URL + CDN headers). */
+data class ResolvedStream(
+    val track: Track,
+    val url: String,
+    val headers: Map<String, String> = emptyMap(),
+)
+
 /**
  * UI-facing façade over Media3 [MediaController].
  * [awaitReady] must succeed before play on cold start.
@@ -43,8 +50,9 @@ class PlayerController @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
-    private val ready = CompletableDeferred<MediaController>()
+    @Volatile private var ready = CompletableDeferred<MediaController>()
     private var progressJob: Job? = null
+    @Volatile private var started = false
 
     private val _snapshot = MutableStateFlow(PlayerSnapshot())
     val snapshot: StateFlow<PlayerSnapshot> = _snapshot.asStateFlow()
@@ -54,6 +62,15 @@ class PlayerController @Inject constructor(
     private val trackById = linkedMapOf<String, Track>()
 
     fun connect() {
+        if (controller != null) return
+        // Allow reconnect after a failed bind
+        if (controllerFuture != null && ready.isCompleted &&
+            ready.getCompletionExceptionOrNull() != null
+        ) {
+            runCatching { MediaController.releaseFuture(controllerFuture!!) }
+            controllerFuture = null
+            ready = CompletableDeferred()
+        }
         if (controllerFuture != null) return
         val token = SessionToken(
             context,
@@ -70,6 +87,7 @@ class PlayerController @Inject constructor(
                     if (!ready.isCompleted) ready.complete(c)
                 } else if (!ready.isCompleted) {
                     ready.completeExceptionally(IllegalStateException("MediaController failed"))
+                    controllerFuture = null
                 }
             },
             MoreExecutors.directExecutor(),
@@ -80,10 +98,18 @@ class PlayerController @Inject constructor(
     suspend fun awaitReady(timeoutMs: Long = 8_000L): Boolean {
         connect()
         controller?.let { return true }
-        return withTimeoutOrNull(timeoutMs) {
-            ready.await()
-            true
+        val ok = withTimeoutOrNull(timeoutMs) {
+            runCatching { ready.await() }.isSuccess
         } == true
+        if (!ok && controller == null) {
+            // Reset for next attempt
+            controllerFuture = null
+            if (!ready.isCompleted) {
+                ready.completeExceptionally(IllegalStateException("timeout"))
+            }
+            ready = CompletableDeferred()
+        }
+        return ok && controller != null
     }
 
     fun release() {
@@ -92,39 +118,46 @@ class PlayerController @Inject constructor(
         controllerFuture?.let { MediaController.releaseFuture(it) }
         controllerFuture = null
         controller = null
+        ready = CompletableDeferred()
     }
 
-    fun play(track: Track, streamUrl: String, newQueue: List<Track> = listOf(track)) {
+    fun play(
+        track: Track,
+        streamUrl: String,
+        newQueue: List<Track> = listOf(track),
+        headers: Map<String, String> = emptyMap(),
+    ) {
         playResolved(
-            tracks = listOf(track to streamUrl),
+            tracks = listOf(ResolvedStream(track, streamUrl, headers)),
             startIndex = 0,
             fullQueue = newQueue.ifEmpty { listOf(track) },
         )
     }
 
     fun playResolved(
-        tracks: List<Pair<Track, String>>,
+        tracks: List<ResolvedStream>,
         startIndex: Int = 0,
-        fullQueue: List<Track> = tracks.map { it.first },
+        fullQueue: List<Track> = tracks.map { it.track },
     ) {
         val c = controller ?: return
         if (tracks.isEmpty()) return
         queue = fullQueue
         trackById.clear()
         fullQueue.forEach { trackById[it.id] = it }
-        tracks.forEach { trackById[it.first.id] = it.first }
+        tracks.forEach { trackById[it.track.id] = it.track }
 
-        val items = tracks.map { (t, url) ->
+        val items = tracks.map { rs ->
             MediaItemFactory.fromUrl(
-                mediaId = t.id,
-                title = t.title,
-                artist = t.artists.joinToString { it.name },
-                streamUrl = url,
-                artworkUri = t.coverUrl,
+                mediaId = rs.track.id,
+                title = rs.track.title,
+                artist = rs.track.artists.joinToString { it.name },
+                streamUrl = rs.url,
+                artworkUri = rs.track.coverUrl,
+                httpHeaders = rs.headers,
             )
         }
         val idx = startIndex.coerceIn(0, items.lastIndex)
-        currentTrack = tracks[idx].first
+        currentTrack = tracks[idx].track
         c.setMediaItems(items, idx, 0L)
         c.prepare()
         c.play()
@@ -133,21 +166,22 @@ class PlayerController @Inject constructor(
 
     /** Append resolved items to the end of the current Media3 playlist. */
     fun appendResolved(
-        tracks: List<Pair<Track, String>>,
-        fullQueueTail: List<Track> = tracks.map { it.first },
+        tracks: List<ResolvedStream>,
+        fullQueueTail: List<Track> = tracks.map { it.track },
     ) {
         val c = controller ?: return
         if (tracks.isEmpty()) return
         fullQueueTail.forEach { trackById[it.id] = it }
-        tracks.forEach { trackById[it.first.id] = it.first }
+        tracks.forEach { trackById[it.track.id] = it.track }
         queue = (queue + fullQueueTail).distinctBy { it.id }
-        val items = tracks.map { (t, url) ->
+        val items = tracks.map { rs ->
             MediaItemFactory.fromUrl(
-                mediaId = t.id,
-                title = t.title,
-                artist = t.artists.joinToString { it.name },
-                streamUrl = url,
-                artworkUri = t.coverUrl,
+                mediaId = rs.track.id,
+                title = rs.track.title,
+                artist = rs.track.artists.joinToString { it.name },
+                streamUrl = rs.url,
+                artworkUri = rs.track.coverUrl,
+                httpHeaders = rs.headers,
             )
         }
         c.addMediaItems(items)

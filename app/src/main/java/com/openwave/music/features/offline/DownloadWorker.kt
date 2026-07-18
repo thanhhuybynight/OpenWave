@@ -73,8 +73,10 @@ class DownloadWorker @AssistedInject constructor(
                 else -> "mp3"
             }
             val out = File(dir, "${trackId.hashCode().toUInt()}.$ext")
-            val req = Request.Builder().url(stream.url).get().build()
-            http.newCall(req).execute().use { resp ->
+            val reqBuilder = Request.Builder().url(stream.url)
+            // CDN auth headers (YT googlevideo / SC sndcdn) — same as playback
+            stream.headers.forEach { (k, v) -> reqBuilder.header(k, v) }
+            http.newCall(reqBuilder.build()).execute().use { resp ->
                 if (!resp.isSuccessful) error("HTTP ${resp.code}")
                 resp.body?.byteStream()?.use { input ->
                     out.outputStream().use { output -> input.copyTo(output) }

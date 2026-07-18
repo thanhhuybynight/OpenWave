@@ -44,7 +44,6 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -79,7 +78,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.openwave.music.core.domain.Artist
-import com.openwave.music.core.domain.CrossfadeSettings
 import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.PlaybackProgress
 import com.openwave.music.core.domain.PlaybackState
@@ -115,10 +113,8 @@ fun NowPlayingScreen(
     stationBuilding: Boolean = false,
     voteLabel: String? = null,
     sleepState: SleepTimerState = SleepTimerState(),
-    crossfade: CrossfadeSettings = CrossfadeSettings(),
     onSleepDurationMs: (Long) -> Unit = {},
     onCancelSleep: () -> Unit = {},
-    onCrossfade: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val track = snapshot.track
@@ -268,32 +264,20 @@ fun NowPlayingScreen(
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
-
-            // Crossfade only; sleep timer is the top clock button (float sheet)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FilterChip(
-                    selected = crossfade.enabled,
-                    onClick = { onCrossfade(!crossfade.enabled) },
-                    label = { Text(if (crossfade.enabled) "Crossfade on" else "Crossfade") },
+            // Crossfade UI removed until dual-ExoPlayer blend is implemented
+            if (sleepState.active) {
+                Spacer(Modifier.height(20.dp))
+                AssistChip(
+                    onClick = { showSleepTimer = true },
+                    label = { Text("Sleep ${formatRemain(sleepState.remainingMs)}") },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Outlined.Schedule,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
                 )
-                if (sleepState.active) {
-                    AssistChip(
-                        onClick = { showSleepTimer = true },
-                        label = { Text("Sleep ${formatRemain(sleepState.remainingMs)}") },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Outlined.Schedule,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        },
-                    )
-                }
             }
 
             Spacer(Modifier.height(32.dp))

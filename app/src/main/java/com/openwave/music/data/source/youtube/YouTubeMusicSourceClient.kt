@@ -8,7 +8,6 @@ import com.openwave.music.core.domain.MusicSourceClient
 import com.openwave.music.core.domain.SearchResult
 import com.openwave.music.core.domain.StreamInfo
 import com.openwave.music.core.domain.Track
-import com.openwave.music.data.source.DemoCatalog
 import com.openwave.music.data.source.newpipe.NewPipeBootstrap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -51,14 +50,8 @@ class YouTubeMusicSourceClient @Inject constructor(
                 .onFailure { Log.w(TAG, "YT search failed: ${it.message}") }
                 .getOrNull()
 
-            if (live != null && live.tracks.isNotEmpty()) return@withContext live
-
-            val demo = DemoCatalog.search(q, limit)
-            SearchResult(
-                tracks = demo.tracks.filter {
-                    it.source == MusicSource.YOUTUBE_MUSIC || it.source == MusicSource.LOCAL
-                },
-            )
+            // Never fall back to DemoCatalog — empty is honest when extractors fail
+            live ?: SearchResult()
         }
 
     override suspend fun getTrack(id: String): Track? = withContext(Dispatchers.IO) {
@@ -69,7 +62,6 @@ class YouTubeMusicSourceClient @Inject constructor(
         val base = runCatching {
             NpStreamInfo.getInfo(watchUrl(videoId)).toTrack()
         }.getOrNull()
-            ?: DemoCatalog.tracks().firstOrNull { it.id == id || it.id == videoId }
         when {
             base != null && credited.isNotEmpty() -> base.copy(artists = credited)
             base != null -> base
