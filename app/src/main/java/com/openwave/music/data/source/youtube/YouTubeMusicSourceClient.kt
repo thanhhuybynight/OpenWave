@@ -4,33 +4,30 @@ import android.util.Log
 import com.openwave.music.core.domain.Artist
 import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.MusicSourceClient
-import com.openwave.music.core.domain.QualityPreference
 import com.openwave.music.core.domain.SearchResult
 import com.openwave.music.core.domain.StreamInfo
-import com.openwave.music.core.domain.StreamQuality
 import com.openwave.music.core.domain.Track
 import com.openwave.music.data.source.DemoCatalog
 import com.openwave.music.data.source.newpipe.NewPipeBootstrap
-import com.openwave.music.data.source.newpipe.NewPipeDownloader
-import com.openwave.music.features.StreamQualitySelector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.search.SearchInfo
-import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.StreamInfo as NpStreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * YouTube / YouTube Music via NewPipeExtractor (anonymous).
- * Search tries music filters first, then general videos.
+ * YouTube Music source.
+ * - Search: NewPipe (music filters → videos)
+ * - Stream: SimpMusic pipeline via [YtmStreamResolver]
+ *   (InnerTube WEB_REMIX player + NewPipe itag map)
  */
 @Singleton
 class YouTubeMusicSourceClient @Inject constructor(
     private val newPipe: NewPipeBootstrap,
-    private val qualitySelector: StreamQualitySelector,
+    private val streamResolver: YtmStreamResolver,
 ) : MusicSourceClient {
 
     override val source: MusicSource = MusicSource.YOUTUBE_MUSIC
@@ -48,7 +45,6 @@ class YouTubeMusicSourceClient @Inject constructor(
 
             if (live != null && live.tracks.isNotEmpty()) return@withContext live
 
-            // Soft demo fallback only when query matches demo titles
             val demo = DemoCatalog.search(q, limit)
             SearchResult(
                 tracks = demo.tracks.filter {
@@ -74,23 +70,10 @@ class YouTubeMusicSourceClient @Inject constructor(
                 qualityLabel = "128kbps",
             )
         }
-        newPipe.ensureInit()
         val videoId = normalizeId(track.id)
         runCatching {
-            val info = NpStreamInfo.getInfo(watchUrl(videoId))
-            val audio = pickAudio(info, qualitySelector.preference)
-                ?: error("no audio streams for $videoId")
-            val url = audio.content ?: error("empty stream url")
-            StreamInfo(
-                url = url,
-                mimeType = audio.format?.mimeType ?: "audio/webm",
-                qualityLabel = "${audio.averageBitrate}kbps",
-                expiresAtEpochMs = System.currentTimeMillis() + 4 * 60 * 60_000L,
-                headers = mapOf(
-                    "Referer" to "https://www.youtube.com",
-                    "User-Agent" to NewPipeDownloader.USER_AGENT,
-                ),
-            )
+            streamResolver.resolveAudio(videoId)
+                ?: error("resolver returned null for $videoId")
         }.onFailure { Log.w(TAG, "YT stream failed for $videoId: ${it.message}") }
             .getOrNull()
             ?: track.streamUrl?.takeIf { it.startsWith("http") }?.let {
@@ -103,7 +86,6 @@ class YouTubeMusicSourceClient @Inject constructor(
         val factory = service.searchQHFactory
         val availableFilters = factory.availableContentFilter?.toList().orEmpty()
 
-        // Prefer music-oriented filters when NewPipe exposes them
         val preferredFilters = listOf(
             listOf("music_songs"),
             listOf("music_videos"),
@@ -131,10 +113,9 @@ class YouTubeMusicSourceClient @Inject constructor(
                 val url = item.url ?: return@forEach
                 val id = extractVideoId(url) ?: return@forEach
                 if (tracks.containsKey(id)) return@forEach
-                val durationSec = item.duration
-                // Skip live-only / unknown ultra-long shells when duration is 0 and name empty
                 val title = item.name.orEmpty()
                 if (title.isBlank()) return@forEach
+                val durationSec = item.duration
                 tracks[id] = Track(
                     id = id,
                     title = title,
@@ -148,7 +129,7 @@ class YouTubeMusicSourceClient @Inject constructor(
                     durationMs = if (durationSec > 0) durationSec * 1000 else 0L,
                     source = MusicSource.YOUTUBE_MUSIC,
                     coverUrl = item.thumbnails
-                        ?.maxByOrNull { (it.height * it.width) }
+                        ?.maxByOrNull { it.height * it.width }
                         ?.url
                         ?: item.thumbnails?.firstOrNull()?.url,
                     sourceUri = url,
@@ -157,7 +138,6 @@ class YouTubeMusicSourceClient @Inject constructor(
             if (tracks.size >= limit) break
         }
 
-        // If still empty, plain query once more
         if (tracks.isEmpty()) {
             val info = SearchInfo.getInfo(service, factory.fromQuery(query))
             info.relatedItems.filterIsInstance<StreamInfoItem>().forEach { item ->
@@ -182,23 +162,6 @@ class YouTubeMusicSourceClient @Inject constructor(
         }
 
         return SearchResult(tracks = tracks.values.take(limit).toList())
-    }
-
-    private fun pickAudio(info: NpStreamInfo, pref: QualityPreference): AudioStream? {
-        val candidates = info.audioStreams.orEmpty()
-            .filter { !it.content.isNullOrBlank() }
-        if (candidates.isEmpty()) return null
-
-        // Prefer progressive / non-manifest when possible; NewPipe already gives direct URLs
-        val ranked = candidates.sortedByDescending { it.averageBitrate }
-        val target = when (pref.preferred) {
-            StreamQuality.MAX -> if (pref.hasYtmPremiumSession) 256 else 160
-            StreamQuality.HIGH -> 128
-            StreamQuality.AUTO -> 128
-        }
-        return ranked.firstOrNull { it.averageBitrate in (target - 40)..(target + 80) }
-            ?: ranked.firstOrNull { it.averageBitrate >= 96 }
-            ?: ranked.first()
     }
 
     private fun NpStreamInfo.toTrack(): Track = Track(

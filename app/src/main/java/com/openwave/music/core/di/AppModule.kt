@@ -38,9 +38,9 @@ object AppModule {
             level = HttpLoggingInterceptor.Level.BASIC
         }
         return OkHttpClient.Builder()
-            .connectTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
-            .callTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .callTimeout(45, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .addInterceptor(logging)
             .build()
