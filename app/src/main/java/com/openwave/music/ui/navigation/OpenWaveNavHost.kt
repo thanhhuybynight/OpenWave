@@ -174,6 +174,7 @@ fun OpenWaveNavHost(
                     snapshot = snapshot,
                     onPlayPause = playerVm::togglePlayPause,
                     onExpand = { showFullPlayer = true },
+                    onSeek = playerVm::seekTo,
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }

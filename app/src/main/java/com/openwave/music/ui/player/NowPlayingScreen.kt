@@ -748,17 +748,22 @@ private fun TransportRow(
 
 /**
  * Compact bottom mini-player — shared element candidate for expand animation.
+ * Thin timeline at the bottom tracks live position and supports seek.
  */
 @Composable
 fun MiniPlayerBar(
     snapshot: PlayerSnapshot,
     onPlayPause: () -> Unit,
     onExpand: () -> Unit,
+    onSeek: (Long) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val track = snapshot.track ?: return
     val scheme = MaterialTheme.colorScheme
     val isPlaying = snapshot.state == PlaybackState.PLAYING
+    var scrubbing by remember { mutableFloatStateOf(-1f) }
+    val progress = snapshot.progress
+    val displayFraction = if (scrubbing >= 0f) scrubbing else progress.fraction
 
     Surface(
         onClick = onExpand,
@@ -769,65 +774,93 @@ fun MiniPlayerBar(
         color = scheme.secondaryContainer,
         tonalElevation = 2.dp,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Box(
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(scheme.primaryContainer),
-                contentAlignment = Alignment.Center,
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (track.coverUrl != null) {
-                    AsyncImage(
-                        model = track.coverUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(scheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (track.coverUrl != null) {
+                        AsyncImage(
+                            model = track.coverUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Text(
+                            text = track.title.take(1),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = scheme.onPrimaryContainer,
+                        )
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = track.title.take(1),
+                        text = track.title,
                         style = MaterialTheme.typography.titleMedium,
-                        color = scheme.onPrimaryContainer,
+                        color = scheme.onSecondaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = track.artists.joinToString { it.name },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = scheme.onSecondaryContainer.copy(alpha = 0.75f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                FilledIconButton(
+                    onClick = onPlayPause,
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = scheme.primary,
+                        contentColor = scheme.onPrimary,
+                    ),
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (isPlaying) "Pause" else "Play",
                     )
                 }
             }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = track.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = scheme.onSecondaryContainer,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = track.artists.joinToString { it.name },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = scheme.onSecondaryContainer.copy(alpha = 0.75f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            FilledIconButton(
-                onClick = onPlayPause,
-                shape = CircleShape,
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = scheme.primary,
-                    contentColor = scheme.onPrimary,
+
+            // Timeline — live progress + scrub (Surface click still expands above)
+            Slider(
+                value = displayFraction,
+                onValueChange = { scrubbing = it },
+                onValueChangeFinished = {
+                    if (scrubbing >= 0f && progress.durationMs > 0L) {
+                        onSeek((scrubbing * progress.durationMs).toLong())
+                    }
+                    scrubbing = -1f
+                },
+                enabled = progress.durationMs > 0L,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp)
+                    .height(28.dp)
+                    .semantics { contentDescription = "Seek mini player" },
+                colors = SliderDefaults.colors(
+                    thumbColor = scheme.primary,
+                    activeTrackColor = scheme.primary,
+                    inactiveTrackColor = scheme.onSecondaryContainer.copy(alpha = 0.2f),
+                    disabledActiveTrackColor = scheme.primary.copy(alpha = 0.5f),
+                    disabledInactiveTrackColor = scheme.onSecondaryContainer.copy(alpha = 0.12f),
+                    disabledThumbColor = scheme.primary.copy(alpha = 0.6f),
                 ),
-                modifier = Modifier.size(44.dp),
-            ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (isPlaying) "Pause" else "Play",
-                )
-            }
+            )
         }
     }
 }

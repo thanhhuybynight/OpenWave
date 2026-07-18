@@ -14,13 +14,20 @@ import com.openwave.music.core.domain.RepeatMode
 import com.openwave.music.core.domain.Track
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -33,9 +40,11 @@ import javax.inject.Singleton
 class PlayerController @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
     private val ready = CompletableDeferred<MediaController>()
+    private var progressJob: Job? = null
 
     private val _snapshot = MutableStateFlow(PlayerSnapshot())
     val snapshot: StateFlow<PlayerSnapshot> = _snapshot.asStateFlow()
@@ -78,6 +87,8 @@ class PlayerController @Inject constructor(
     }
 
     fun release() {
+        progressJob?.cancel()
+        progressJob = null
         controllerFuture?.let { MediaController.releaseFuture(it) }
         controllerFuture = null
         controller = null
@@ -230,9 +241,56 @@ class PlayerController @Inject constructor(
                     syncCurrentFromPlayer(player)
                 }
                 publish(player)
+                // Keep UI timeline moving while audio plays — events alone stall.
+                if (player.isPlaying) ensureProgressTicker() else stopProgressTicker()
             }
         })
         publish(c)
+        if (c.isPlaying) ensureProgressTicker()
+    }
+
+    /**
+     * Media3 only emits listener events on discrete changes, not every frame of
+     * playback position. Tick ~4×/s so mini-player / scrubber stay live.
+     */
+    private fun ensureProgressTicker() {
+        if (progressJob?.isActive == true) return
+        progressJob = scope.launch {
+            while (isActive) {
+                val c = controller
+                if (c == null || !c.isPlaying) {
+                    // Still refresh once when paused so position is accurate after seek
+                    c?.let { publishProgressOnly(it) }
+                    break
+                }
+                publishProgressOnly(c)
+                delay(250L)
+            }
+            progressJob = null
+        }
+    }
+
+    private fun stopProgressTicker() {
+        progressJob?.cancel()
+        progressJob = null
+        controller?.let { publishProgressOnly(it) }
+    }
+
+    private fun publishProgressOnly(player: Player) {
+        val progress = PlaybackProgress(
+            positionMs = player.currentPosition.coerceAtLeast(0L),
+            durationMs = player.duration.coerceAtLeast(0L),
+            bufferedMs = player.bufferedPosition.coerceAtLeast(0L),
+        )
+        // Avoid rewriting the whole snapshot identity when only position moves —
+        // still need a new object so StateFlow emits.
+        _snapshot.update { snap ->
+            if (snap.progress == progress && snap.state == player.toPlaybackState()) snap
+            else snap.copy(
+                state = player.toPlaybackState(),
+                progress = progress,
+            )
+        }
     }
 
     private fun syncCurrentFromPlayer(player: Player) {
@@ -249,9 +307,9 @@ class PlayerController @Inject constructor(
                 track = currentTrack,
                 state = player.toPlaybackState(),
                 progress = PlaybackProgress(
-                    positionMs = player.currentPosition,
+                    positionMs = player.currentPosition.coerceAtLeast(0L),
                     durationMs = player.duration.coerceAtLeast(0L),
-                    bufferedMs = player.bufferedPosition,
+                    bufferedMs = player.bufferedPosition.coerceAtLeast(0L),
                 ),
                 queue = queue,
                 queueIndex = player.currentMediaItemIndex,
