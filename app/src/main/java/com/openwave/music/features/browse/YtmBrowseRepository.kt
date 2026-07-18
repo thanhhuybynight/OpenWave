@@ -1,52 +1,141 @@
 package com.openwave.music.features.browse
 
+import android.util.Log
 import com.openwave.music.core.domain.BrowseItem
 import com.openwave.music.core.domain.BrowseShelf
 import com.openwave.music.core.domain.BrowseShelfKind
-import com.openwave.music.core.domain.MusicSource
-import com.openwave.music.core.domain.Track
-import com.openwave.music.data.source.DemoCatalog
-import com.openwave.music.data.source.newpipe.NewPipeBootstrap
-import com.openwave.music.data.source.youtube.YouTubeMusicSourceClient
+import com.openwave.music.core.domain.HomeFeed
+import com.openwave.music.data.source.youtube.YouTubeChartsClient
 import com.openwave.music.features.BrowseRepository
+import com.openwave.music.features.home.HistoryRecommendationEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import org.schabi.newpipe.extractor.ServiceList
-import org.schabi.newpipe.extractor.kiosk.KioskInfo
-import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Home shelves: try NewPipe kiosks (trending) + search-based moods; fall back to demo.
+ * Home feed:
+ * 1. **Đề xuất** — from local play history ([HistoryRecommendationEngine])
+ * 2. **Hàng đầu** — YouTube Charts daily (https://charts.youtube.com)
+ *    - Bài hát hàng đầu
+ *    - Nghệ sĩ hàng đầu
  */
 @Singleton
 class YtmBrowseRepository @Inject constructor(
-    private val newPipe: NewPipeBootstrap,
-    private val ytm: YouTubeMusicSourceClient,
+    private val charts: YouTubeChartsClient,
+    private val recommendations: HistoryRecommendationEngine,
 ) : BrowseRepository {
 
     @Volatile
-    private var cache: List<BrowseShelf>? = null
+    private var cache: HomeFeed? = null
     private var cacheAt: Long = 0L
 
-    override suspend fun homeShelves(): List<BrowseShelf> = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        cache?.takeIf { now - cacheAt < 5 * 60_000L }?.let { return@withContext it }
+    override suspend fun homeShelves(): List<BrowseShelf> =
+        homeFeed().shelves()
 
-        newPipe.ensureInit()
-        val shelves = runCatching { loadLive() }.getOrNull()
-        val result = if (!shelves.isNullOrEmpty()) shelves else DemoCatalog.homeShelves()
-        cache = result
+    suspend fun homeFeed(): HomeFeed = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        cache?.takeIf { now - cacheAt < CACHE_TTL_MS }?.let { return@withContext it }
+
+        val feed = coroutineScope {
+            val recsJob = async {
+                runCatching { recommendations.recommendations(24) }
+                    .onFailure { Log.e(TAG, "recs: ${it.message}", it) }
+                    .getOrElse {
+                        BrowseShelf(
+                            id = "de_xuat",
+                            title = "Đề xuất",
+                            kind = BrowseShelfKind.RECOMMENDATIONS,
+                            subtitle = "Không tải được đề xuất",
+                        )
+                    }
+            }
+            val chartsJob = async {
+                runCatching { charts.dailyCharts(preferredRegion = preferredRegion(), limit = 30) }
+                    .onFailure { Log.e(TAG, "charts: ${it.message}", it) }
+                    .getOrNull()
+            }
+
+            val recs = recsJob.await()
+            val chart = chartsJob.await()
+
+            val dateLabel = YouTubeChartsClient.formatChartDate(
+                chart?.songsEndDate ?: chart?.artistsEndDate,
+            )
+            val periodNote = when {
+                chart?.songsPeriod?.contains("DAILY", true) == true -> "theo ngày"
+                chart?.songsPeriod?.contains("WEEKLY", true) == true -> "theo tuần"
+                else -> null
+            }
+            val chartSubtitle = buildString {
+                append("YouTube Charts")
+                if (chart != null) append(" · ").append(chart.region.uppercase(Locale.US))
+                if (periodNote != null) append(" · ").append(periodNote)
+                if (dateLabel != null) append(" · ").append(dateLabel)
+            }
+
+            val topSongs = BrowseShelf(
+                id = "bai_hat_hang_dau",
+                title = "Bài hát hàng đầu",
+                kind = BrowseShelfKind.TOP_SONGS,
+                subtitle = chartSubtitle,
+                items = chart?.songs.orEmpty().map { s ->
+                    BrowseItem.TrackItem(
+                        id = s.track.id,
+                        title = s.track.title,
+                        subtitle = s.track.artists.joinToString { it.name },
+                        coverUrl = s.track.coverUrl,
+                        track = s.track,
+                        rank = s.rank,
+                        chartViews = s.viewCount,
+                    )
+                },
+            )
+
+            val topArtists = BrowseShelf(
+                id = "nghe_si_hang_dau",
+                title = "Nghệ sĩ hàng đầu",
+                kind = BrowseShelfKind.TOP_ARTISTS,
+                subtitle = chartSubtitle,
+                items = chart?.artists.orEmpty().map { a ->
+                    BrowseItem.ArtistItem(
+                        id = a.artist.id,
+                        title = a.artist.name,
+                        subtitle = a.viewCount?.let { formatViews(it) },
+                        coverUrl = a.coverUrl ?: a.artist.imageUrl,
+                        artist = a.artist,
+                        rank = a.rank,
+                        channelId = a.channelId,
+                    )
+                },
+            )
+
+            HomeFeed(
+                recommendations = recs,
+                topSongs = topSongs,
+                topArtists = topArtists,
+                chartDateLabel = dateLabel,
+                isPartial = chart == null,
+            )
+        }
+
+        cache = feed
         cacheAt = now
-        result
+        feed
     }
 
     override suspend fun shelf(kind: BrowseShelfKind, params: String?): BrowseShelf {
-        return homeShelves().firstOrNull { it.kind == kind }
-            ?: BrowseShelf(id = kind.name, title = kind.name, kind = kind)
+        val feed = homeFeed()
+        return when (kind) {
+            BrowseShelfKind.RECOMMENDATIONS -> feed.recommendations
+            BrowseShelfKind.TOP_SONGS -> feed.topSongs
+            BrowseShelfKind.TOP_ARTISTS -> feed.topArtists
+            else -> feed.shelves().firstOrNull { it.kind == kind }
+                ?: BrowseShelf(id = kind.name, title = kind.name, kind = kind)
+        }
     }
 
     override fun invalidate() {
@@ -54,91 +143,24 @@ class YtmBrowseRepository @Inject constructor(
         cacheAt = 0L
     }
 
-    private suspend fun loadLive(): List<BrowseShelf> = coroutineScope {
-        val trending = async { trendingTracks() }
-        val focus = async { ytm.search("lofi focus music", 8).tracks }
-        val energy = async { ytm.search("workout electronic", 8).tracks }
-        val chill = async { ytm.search("chill r&b playlist", 8).tracks }
-
-        val t = trending.await()
-        val shelves = mutableListOf<BrowseShelf>()
-        if (t.isNotEmpty()) {
-            shelves += BrowseShelf(
-                id = "home_quick",
-                title = "Quick picks",
-                kind = BrowseShelfKind.HOME_QUICK_PICKS,
-                items = t.take(12).map { it.toItem() },
-            )
-            shelves += BrowseShelf(
-                id = "charts",
-                title = "Charts",
-                kind = BrowseShelfKind.CHARTS,
-                items = t.drop(2).take(12).map { it.toItem() },
-            )
-        }
-        shelves += BrowseShelf(
-            id = "moods",
-            title = "Moods & genre",
-            kind = BrowseShelfKind.MOODS_AND_GENRES,
-            items = listOf(
-                BrowseItem.CategoryItem("mood-focus", "Focus", "Deep work"),
-                BrowseItem.CategoryItem("mood-energy", "Energy", "Move"),
-                BrowseItem.CategoryItem("mood-chill", "Chill", "Wind down"),
-            ) + chill.await().take(4).map { it.toItem() },
-        )
-        val podcastish = focus.await().take(6)
-        if (podcastish.isNotEmpty()) {
-            shelves += BrowseShelf(
-                id = "podcasts",
-                title = "Podcasts & long-form",
-                kind = BrowseShelfKind.PODCASTS,
-                items = podcastish.map { it.toItem() },
-            )
-        }
-        val energyTracks = energy.await()
-        if (energyTracks.isNotEmpty()) {
-            shelves += BrowseShelf(
-                id = "mixes",
-                title = "Mixes",
-                kind = BrowseShelfKind.MIXES,
-                items = energyTracks.map { it.toItem() },
-            )
-        }
-        shelves
+    private fun preferredRegion(): String {
+        // Prefer device locale country; US often has daily song charts.
+        val device = Locale.getDefault().country.lowercase(Locale.US)
+        return device.ifBlank { "us" }
     }
 
-    private fun trendingTracks(): List<Track> = runCatching {
-        val service = ServiceList.YouTube
-        val kioskList = service.kioskList
-        val id = kioskList.availableKiosks.firstOrNull() ?: return emptyList()
-        val extractor = kioskList.getExtractorById(id, null)
-        extractor.fetchPage()
-        val info = KioskInfo.getInfo(extractor)
-        info.relatedItems.filterIsInstance<StreamInfoItem>().mapNotNull { item ->
-            val url = item.url ?: return@mapNotNull null
-            val vid = YouTubeMusicSourceClient.extractVideoId(url) ?: return@mapNotNull null
-            Track(
-                id = vid,
-                title = item.name.orEmpty(),
-                artists = listOf(
-                    com.openwave.music.core.domain.Artist(
-                        id = item.uploaderName.orEmpty(),
-                        name = item.uploaderName.orEmpty().ifBlank { "YouTube" },
-                        source = MusicSource.YOUTUBE_MUSIC,
-                    ),
-                ),
-                source = MusicSource.YOUTUBE_MUSIC,
-                coverUrl = item.thumbnails?.firstOrNull()?.url,
-                sourceUri = url,
-            )
+    private fun formatViews(raw: String): String {
+        val n = raw.toLongOrNull() ?: return raw
+        return when {
+            n >= 1_000_000_000 -> String.format(Locale.US, "%.1fB lượt xem", n / 1_000_000_000.0)
+            n >= 1_000_000 -> String.format(Locale.US, "%.1fM lượt xem", n / 1_000_000.0)
+            n >= 1_000 -> String.format(Locale.US, "%.1fK lượt xem", n / 1_000.0)
+            else -> "$n lượt xem"
         }
-    }.getOrDefault(emptyList())
+    }
 
-    private fun Track.toItem() = BrowseItem.TrackItem(
-        id = id,
-        title = title,
-        subtitle = artists.joinToString { it.name },
-        coverUrl = coverUrl,
-        track = this,
-    )
+    companion object {
+        private const val TAG = "HomeBrowse"
+        private const val CACHE_TTL_MS = 10 * 60_000L
+    }
 }

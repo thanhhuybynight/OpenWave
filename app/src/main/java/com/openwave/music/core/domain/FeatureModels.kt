@@ -23,9 +23,12 @@ data class QualityPreference(
     val hasYtmSession: Boolean = false,
 )
 
-// ── Browse (Home, Charts, Podcasts, Moods & Genre) ──────────────────────────
+// ── Browse (Home: Đề xuất, Hàng đầu / YouTube Charts) ───────────────────────
 
 enum class BrowseShelfKind {
+    RECOMMENDATIONS,
+    TOP_SONGS,
+    TOP_ARTISTS,
     HOME_QUICK_PICKS,
     CHARTS,
     PODCASTS,
@@ -40,6 +43,8 @@ data class BrowseShelf(
     val title: String,
     val kind: BrowseShelfKind,
     val items: List<BrowseItem> = emptyList(),
+    /** e.g. "YouTube Charts · 16/07/2026" or "Theo lịch sử nghe" */
+    val subtitle: String? = null,
 )
 
 sealed class BrowseItem {
@@ -54,6 +59,18 @@ sealed class BrowseItem {
         override val subtitle: String? = null,
         override val coverUrl: String? = null,
         val track: Track,
+        val rank: Int? = null,
+        val chartViews: String? = null,
+    ) : BrowseItem()
+
+    data class ArtistItem(
+        override val id: String,
+        override val title: String,
+        override val subtitle: String? = null,
+        override val coverUrl: String? = null,
+        val artist: Artist,
+        val rank: Int? = null,
+        val channelId: String? = null,
     ) : BrowseItem()
 
     data class PlaylistItem(
@@ -71,6 +88,18 @@ sealed class BrowseItem {
         override val coverUrl: String? = null,
         val params: String? = null,
     ) : BrowseItem()
+}
+
+/** Snapshot of the rewritten Home feed. */
+data class HomeFeed(
+    val recommendations: BrowseShelf,
+    val topSongs: BrowseShelf,
+    val topArtists: BrowseShelf,
+    val chartDateLabel: String? = null,
+    val isPartial: Boolean = false,
+) {
+    fun shelves(): List<BrowseShelf> = listOf(recommendations, topSongs, topArtists)
+        .filter { it.items.isNotEmpty() || it.kind == BrowseShelfKind.RECOMMENDATIONS }
 }
 
 // ── Library / playlists / stats ─────────────────────────────────────────────

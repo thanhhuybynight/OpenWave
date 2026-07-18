@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -117,6 +118,30 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             val track = demo.getTrack("demo-1") ?: return@launch
             playTrack(track)
+        }
+    }
+
+    /** Play top search hit for an artist name (chart artist tap). */
+    fun playArtist(artistName: String) {
+        if (artistName.isBlank()) return
+        viewModelScope.launch {
+            _playError.value = null
+            _isResolving.value = true
+            try {
+                val hit = catalog.searchProgressive(artistName, setOf(MusicSource.YOUTUBE_MUSIC))
+                    .firstOrNull { it.tracks.isNotEmpty() }
+                    ?.tracks
+                    ?.firstOrNull()
+                if (hit != null) {
+                    playUnified(hit)
+                } else {
+                    _playError.value = "Không tìm thấy bài của $artistName"
+                }
+            } catch (t: Throwable) {
+                _playError.value = t.message?.take(120) ?: "Artist play failed"
+            } finally {
+                _isResolving.value = false
+            }
         }
     }
 

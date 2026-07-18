@@ -135,8 +135,8 @@ fun OpenWaveNavHost(
             ) {
                 composable(RootDest.Home.route) {
                     HomeScreen(
-                        onPlayDemo = { playerVm.playDemo() },
                         onPlayTrack = { playerVm.playTrack(it) },
+                        onArtistClick = { artist -> playerVm.playArtist(artist.name) },
                         onAddToPlaylist = { addTrack = it },
                     )
                 }
