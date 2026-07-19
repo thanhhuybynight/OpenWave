@@ -118,6 +118,8 @@ fun NowPlayingScreen(
     onToggleAutoQueue: () -> Unit = {},
     autoQueueEnabled: Boolean = true,
     autoQueueBuilding: Boolean = false,
+    isFavorite: Boolean = false,
+    onToggleFavorite: () -> Unit = {},
     voteLabel: String? = null,
     sleepState: SleepTimerState = SleepTimerState(),
     onSleepDurationMs: (Long) -> Unit = {},
@@ -127,6 +129,7 @@ fun NowPlayingScreen(
     val track = snapshot.track
     val scheme = MaterialTheme.colorScheme
     var showSleepTimer by remember { mutableStateOf(false) }
+    val subtitle = track?.let { TrackDisplay.subtitle(it) }.orEmpty()
     val scrim = Brush.verticalGradient(
         colors = listOf(
             scheme.surface.copy(alpha = 0.0f),

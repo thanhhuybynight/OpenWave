@@ -354,6 +354,10 @@ fun OpenWaveNavHost(
                 onToggleAutoQueue = playerVm::toggleAutoContinue,
                 autoQueueEnabled = autoContinue,
                 autoQueueBuilding = stationBuilding,
+                isFavorite = snapshot.track?.id in favoriteIds,
+                onToggleFavorite = {
+                    snapshot.track?.let { libraryVm.toggleFavorite(it) }
+                },
                 voteLabel = voteLabel,
                 sleepState = sleepState,
                 onSleepDurationMs = playerVm::startSleepTimer,
