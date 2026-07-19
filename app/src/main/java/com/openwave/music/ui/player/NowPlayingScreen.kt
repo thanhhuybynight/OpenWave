@@ -78,8 +78,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.size.Size
 import com.openwave.music.core.domain.Artist
+import com.openwave.music.core.domain.ArtworkUrls
 import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.PlaybackProgress
 import com.openwave.music.core.domain.PlaybackState
@@ -478,6 +482,9 @@ private fun ArtworkHero(
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    // Prefer player-grade URL even if snapshot still holds a list preview
+    val hiRes = ArtworkUrls.highRes(coverUrl) ?: coverUrl
     Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.extraLarge,
@@ -485,9 +492,14 @@ private fun ArtworkHero(
         shadowElevation = 8.dp,
         color = scheme.surfaceVariant,
     ) {
-        if (coverUrl != null) {
+        if (hiRes != null) {
             AsyncImage(
-                model = coverUrl,
+                model = ImageRequest.Builder(context)
+                    .data(hiRes)
+                    // Don't downsample to view size for the hero — keep sharp on large screens
+                    .size(Size.ORIGINAL)
+                    .crossfade(true)
+                    .build(),
                 contentDescription = "Album art for $title",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
@@ -696,7 +708,10 @@ fun MiniPlayerBar(
                 ) {
                     if (track.coverUrl != null) {
                         AsyncImage(
-                            model = track.coverUrl,
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(ArtworkUrls.highRes(track.coverUrl) ?: track.coverUrl)
+                                .crossfade(true)
+                                .build(),
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize(),

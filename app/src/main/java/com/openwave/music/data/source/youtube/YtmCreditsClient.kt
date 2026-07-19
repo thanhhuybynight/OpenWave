@@ -3,6 +3,7 @@ package com.openwave.music.data.source.youtube
 import android.util.Log
 import com.openwave.music.core.domain.Album
 import com.openwave.music.core.domain.Artist
+import com.openwave.music.core.domain.ArtworkUrls
 import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.Track
 import kotlinx.coroutines.Dispatchers
@@ -151,7 +152,7 @@ class YtmCreditsClient @Inject constructor(
             ?.optJSONObject("musicThumbnailRenderer")
             ?.optJSONObject("thumbnail")
             ?.optJSONArray("thumbnails")
-        val cover = bestThumb(thumbs)
+        val cover = ArtworkUrls.highRes(bestThumb(thumbs), videoId)
         val album = albumTitle?.let { name ->
             Album(
                 id = "yt-album-${name.hashCode()}",

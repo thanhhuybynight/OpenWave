@@ -3,6 +3,7 @@ package com.openwave.music.data.source.youtube
 import android.util.Log
 import com.openwave.music.core.domain.Artist
 import com.openwave.music.core.domain.ArtistNameSplitter
+import com.openwave.music.core.domain.ArtworkUrls
 import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.MusicSourceClient
 import com.openwave.music.core.domain.SearchResult
@@ -138,16 +139,17 @@ class YouTubeMusicSourceClient @Inject constructor(
                 val title = item.name.orEmpty()
                 if (title.isBlank()) return@forEach
                 val durationSec = item.duration
+                val thumb = item.thumbnails
+                    ?.maxByOrNull { it.height * it.width }
+                    ?.url
+                    ?: item.thumbnails?.firstOrNull()?.url
                 tracks[id] = Track(
                     id = id,
                     title = title,
                     artists = artistsFromCredits(item.uploaderName, title),
                     durationMs = if (durationSec > 0) durationSec * 1000 else 0L,
                     source = MusicSource.YOUTUBE_MUSIC,
-                    coverUrl = item.thumbnails
-                        ?.maxByOrNull { it.height * it.width }
-                        ?.url
-                        ?: item.thumbnails?.firstOrNull()?.url,
+                    coverUrl = ArtworkUrls.highRes(thumb, id),
                     sourceUri = url,
                 )
             }
@@ -160,13 +162,17 @@ class YouTubeMusicSourceClient @Inject constructor(
                 val url = item.url ?: return@forEach
                 val id = extractVideoId(url) ?: return@forEach
                 val title = item.name.orEmpty()
+                val thumb = item.thumbnails
+                    ?.maxByOrNull { it.height * it.width }
+                    ?.url
+                    ?: item.thumbnails?.firstOrNull()?.url
                 tracks[id] = Track(
                     id = id,
                     title = title,
                     artists = artistsFromCredits(item.uploaderName, title),
                     durationMs = if (item.duration > 0) item.duration * 1000 else 0L,
                     source = MusicSource.YOUTUBE_MUSIC,
-                    coverUrl = item.thumbnails?.firstOrNull()?.url,
+                    coverUrl = ArtworkUrls.highRes(thumb, id),
                     sourceUri = url,
                 )
             }
@@ -175,15 +181,22 @@ class YouTubeMusicSourceClient @Inject constructor(
         return SearchResult(tracks = tracks.values.take(limit).toList())
     }
 
-    private fun NpStreamInfo.toTrack(): Track = Track(
-        id = extractVideoId(url) ?: id.toString(),
-        title = name.orEmpty(),
-        artists = artistsFromCredits(uploaderName, name.orEmpty()),
-        durationMs = if (duration > 0) duration * 1000 else 0L,
-        source = MusicSource.YOUTUBE_MUSIC,
-        coverUrl = thumbnails?.firstOrNull()?.url,
-        sourceUri = url,
-    )
+    private fun NpStreamInfo.toTrack(): Track {
+        val videoId = extractVideoId(url) ?: id.toString()
+        val thumb = thumbnails
+            ?.maxByOrNull { it.height * it.width }
+            ?.url
+            ?: thumbnails?.firstOrNull()?.url
+        return Track(
+            id = videoId,
+            title = name.orEmpty(),
+            artists = artistsFromCredits(uploaderName, name.orEmpty()),
+            durationMs = if (duration > 0) duration * 1000 else 0L,
+            source = MusicSource.YOUTUBE_MUSIC,
+            coverUrl = ArtworkUrls.highRes(thumb, videoId.takeIf { it.length == 11 }),
+            sourceUri = url,
+        )
+    }
 
     /**
      * Build separate [Artist] entries from uploader + title credits

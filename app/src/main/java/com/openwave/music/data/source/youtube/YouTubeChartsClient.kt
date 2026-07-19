@@ -2,6 +2,7 @@ package com.openwave.music.data.source.youtube
 
 import android.util.Log
 import com.openwave.music.core.domain.Artist
+import com.openwave.music.core.domain.ArtworkUrls
 import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.Track
 import kotlinx.coroutines.Dispatchers
@@ -212,7 +213,7 @@ class YouTubeChartsClient @Inject constructor(
                 artists += Artist(id = "yt-unknown", name = "YouTube", source = MusicSource.YOUTUBE_MUSIC)
             }
             val thumbs = o.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
-            val cover = bestThumb(thumbs)
+            val cover = ArtworkUrls.highRes(bestThumb(thumbs), videoId)
             val rank = o.optJSONObject("chartEntryMetadata")?.optInt("currentPosition")
                 ?.takeIf { it > 0 } ?: (out.size + 1)
             val track = Track(
@@ -314,7 +315,9 @@ class YouTubeChartsClient @Inject constructor(
                 best = url
             }
         }
-        return best?.replace("http://", "https://")
+        val picked = best?.replace("http://", "https://") ?: return null
+        // Chart entries may only expose tiny thumbs; bump CDN params
+        return ArtworkUrls.highRes(picked) ?: picked
     }
 
     companion object {

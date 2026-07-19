@@ -7,6 +7,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import com.openwave.music.core.domain.ArtworkUrls
 import com.openwave.music.core.domain.PlaybackProgress
 import com.openwave.music.core.domain.PlaybackState
 import com.openwave.music.core.domain.PlayerSnapshot
@@ -141,12 +142,17 @@ class PlayerController @Inject constructor(
     ) {
         val c = controller ?: return
         if (tracks.isEmpty()) return
-        queue = fullQueue
+        // Upgrade YTM/SC preview thumbs → player-grade artwork for UI + notification
+        val enriched = tracks.map { rs ->
+            rs.copy(track = ArtworkUrls.enrich(rs.track))
+        }
+        val enrichedQueue = ArtworkUrls.enrichAll(fullQueue)
+        queue = enrichedQueue
         trackById.clear()
-        fullQueue.forEach { trackById[it.id] = it }
-        tracks.forEach { trackById[it.track.id] = it.track }
+        enrichedQueue.forEach { trackById[it.id] = it }
+        enriched.forEach { trackById[it.track.id] = it.track }
 
-        val items = tracks.map { rs ->
+        val items = enriched.map { rs ->
             MediaItemFactory.fromUrl(
                 mediaId = rs.track.id,
                 title = rs.track.title,
@@ -157,7 +163,7 @@ class PlayerController @Inject constructor(
             )
         }
         val idx = startIndex.coerceIn(0, items.lastIndex)
-        currentTrack = tracks[idx].track
+        currentTrack = enriched[idx].track
         c.setMediaItems(items, idx, 0L)
         c.prepare()
         c.play()
@@ -171,10 +177,12 @@ class PlayerController @Inject constructor(
     ) {
         val c = controller ?: return
         if (tracks.isEmpty()) return
-        fullQueueTail.forEach { trackById[it.id] = it }
-        tracks.forEach { trackById[it.track.id] = it.track }
-        queue = (queue + fullQueueTail).distinctBy { it.id }
-        val items = tracks.map { rs ->
+        val enrichedTail = ArtworkUrls.enrichAll(fullQueueTail)
+        val enriched = tracks.map { rs -> rs.copy(track = ArtworkUrls.enrich(rs.track)) }
+        enrichedTail.forEach { trackById[it.id] = it }
+        enriched.forEach { trackById[it.track.id] = it.track }
+        queue = (queue + enrichedTail).distinctBy { it.id }
+        val items = enriched.map { rs ->
             MediaItemFactory.fromUrl(
                 mediaId = rs.track.id,
                 title = rs.track.title,

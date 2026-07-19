@@ -150,7 +150,11 @@ class StationRepositoryImpl @Inject constructor(
                         ),
                         durationMs = if (si.duration > 0) si.duration * 1000 else 0L,
                         source = MusicSource.YOUTUBE_MUSIC,
-                        coverUrl = si.thumbnails?.firstOrNull()?.url,
+                        coverUrl = com.openwave.music.core.domain.ArtworkUrls.highRes(
+                            si.thumbnails?.maxByOrNull { it.height * it.width }?.url
+                                ?: si.thumbnails?.firstOrNull()?.url,
+                            id,
+                        ),
                         sourceUri = u,
                     )
                 }

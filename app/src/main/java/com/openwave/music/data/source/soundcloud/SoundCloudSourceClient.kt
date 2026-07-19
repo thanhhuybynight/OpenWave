@@ -2,6 +2,7 @@ package com.openwave.music.data.source.soundcloud
 
 import android.util.Log
 import com.openwave.music.core.domain.Artist
+import com.openwave.music.core.domain.ArtworkUrls
 import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.MusicSourceClient
 import com.openwave.music.core.domain.SearchResult
@@ -193,10 +194,10 @@ class SoundCloudSourceClient @Inject constructor(
             ?: user?.optString("full_name")?.trim()?.takeIf { it.isNotBlank() }
             ?: "SoundCloud"
         val userId = extractUserId(user)
-        val art = o.optString("artwork_url")
+        val artRaw = o.optString("artwork_url")
             .ifBlank { user?.optString("avatar_url").orEmpty() }
-            .replace("-large", "-t500x500")
             .takeIf { it.startsWith("http") }
+        val art = ArtworkUrls.highRes(artRaw)
         val duration = o.optLong("duration").takeIf { it > 0 }
             ?: o.optLong("full_duration").takeIf { it > 0 }
             ?: 0L
