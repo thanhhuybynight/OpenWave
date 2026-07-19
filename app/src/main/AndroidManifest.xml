@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- In-app Equalizer / LoudnessEnhancer (session-scoped, not system-wide) -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Android 13+ media notification -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 

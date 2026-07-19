@@ -1,6 +1,7 @@
 package com.openwave.music.core.player
 
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -10,12 +11,16 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.openwave.music.MainActivity
 import com.openwave.music.OpenWaveApp
+import com.openwave.music.features.audiofx.AudioFxController
 import dagger.hilt.android.AndroidEntryPoint
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -23,7 +28,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 /**
- * Foreground media playback with OkHttp data source.
+ * Foreground media playback with OkHttp data source + app-local audio FX.
  * Stream headers are applied per-URL (SoundCloud vs YouTube CDN).
  */
 @UnstableApi
@@ -31,12 +36,14 @@ import javax.inject.Inject
 class PlaybackService : MediaSessionService() {
 
     @Inject lateinit var okHttp: OkHttpClient
+    @Inject lateinit var audioFx: AudioFxController
 
     private var mediaSession: MediaSession? = null
     private var player: ExoPlayer? = null
 
     override fun onCreate() {
         super.onCreate()
+        audioFx.start()
 
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(1_500, 40_000, 750, 1_500)
@@ -58,7 +65,22 @@ class PlaybackService : MediaSessionService() {
         val mediaSourceFactory = DefaultMediaSourceFactory(this)
             .setDataSourceFactory(dataSourceFactory)
 
+        val renderersFactory = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean,
+            ): AudioSink {
+                return DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessors(audioFx.audioProcessors)
+                    .build()
+            }
+        }
+
         val exo = ExoPlayer.Builder(this)
+            .setRenderersFactory(renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -74,6 +96,16 @@ class PlaybackService : MediaSessionService() {
             .setSeekForwardIncrementMs(10_000)
             .build()
             .also { it.pauseAtEndOfMediaItems = false }
+
+        exo.addListener(
+            object : Player.Listener {
+                override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                    audioFx.attachSession(audioSessionId)
+                }
+            },
+        )
+        // Initial attach (session may already be non-zero)
+        audioFx.attachSession(exo.audioSessionId)
 
         player = exo
 
@@ -105,6 +137,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        audioFx.release()
         mediaSession?.run {
             player.release()
             release()
@@ -129,7 +162,6 @@ class PlaybackService : MediaSessionService() {
             val defaults = defaultHeadersForHost(host)
             val merged = defaults + registered // registered wins
             val builder = original.newBuilder()
-            // Drop stale global Origin/Referer then apply merged
             builder.removeHeader("Origin")
             builder.removeHeader("Referer")
             merged.forEach { (k, v) -> builder.header(k, v) }
