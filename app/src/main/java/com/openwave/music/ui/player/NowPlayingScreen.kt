@@ -195,15 +195,54 @@ fun NowPlayingScreen(
 
             Spacer(Modifier.height(28.dp))
 
-            // Metadata — title only
-            Text(
-                text = track?.title ?: "Select a track",
-                style = MaterialTheme.typography.headlineMedium,
-                color = scheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+            // Metadata — title + subtitle + favorite (same as mini-player)
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-            )
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = track?.title ?: "Select a track",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = scheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (subtitle.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = scheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = onToggleFavorite,
+                    enabled = track != null,
+                ) {
+                    Icon(
+                        imageVector = if (isFavorite) {
+                            Icons.Filled.Favorite
+                        } else {
+                            Icons.Outlined.FavoriteBorder
+                        },
+                        contentDescription = if (isFavorite) {
+                            "Bỏ yêu thích"
+                        } else {
+                            "Thêm vào Yêu thích"
+                        },
+                        tint = when {
+                            track == null -> scheme.onSurfaceVariant.copy(alpha = 0.4f)
+                            isFavorite -> scheme.error
+                            else -> scheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
 
             Spacer(Modifier.height(28.dp))
 
