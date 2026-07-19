@@ -27,9 +27,11 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Auto radio / station queue:
- * - When a track ends and there is no next item, generate a related queue and continue.
- * - [startStation] builds a station from a seed and starts playback immediately.
+ * Auto-queue (radio):
+ * - **On by default** for single-track play, playlists, and stations.
+ * - When the current queue runs out of "next", append related/random free-source tracks.
+ * - Only the user radio toggle can turn it off ([setAutoContinue] / [toggleAutoContinue]).
+ * - [startStation] still builds an immediate related queue from a seed.
  * - [crossplay] controls whether next tracks may come from other free sources.
  */
 @Singleton
@@ -45,13 +47,17 @@ class RadioQueueManager @Inject constructor(
     private var fillJob: Job? = null
     @Volatile private var started = false
 
+    /** User-facing radio / auto-queue switch (default ON). */
     private val _autoContinue = MutableStateFlow(true)
     val autoContinue: StateFlow<Boolean> = _autoContinue.asStateFlow()
 
     private val _crossplay = MutableStateFlow(true)
     val crossplay: StateFlow<Boolean> = _crossplay.asStateFlow()
 
-    private val _stationActive = MutableStateFlow(false)
+    /**
+     * UI "radio on" indicator — mirrors [autoContinue] (and true while a station fill runs).
+     */
+    private val _stationActive = MutableStateFlow(true)
     val stationActive: StateFlow<Boolean> = _stationActive.asStateFlow()
 
     private val _stationLabel = MutableStateFlow<String?>(null)
@@ -66,24 +72,38 @@ class RadioQueueManager @Inject constructor(
         if (started) return
         started = true
         scope.launch {
-            settings.autoContinue.collectLatest { _autoContinue.value = it }
+            settings.autoContinue.collectLatest { enabled ->
+                _autoContinue.value = enabled
+                _stationActive.value = enabled
+            }
         }
         scope.launch {
             settings.crossplay.collectLatest { _crossplay.value = it }
         }
         scope.launch {
             player.snapshot
-                .map { it.state to (it.track?.id ?: "") }
+                .map { Triple(it.state, it.track?.id.orEmpty(), it.queue.size) }
                 .distinctUntilChanged()
-                .collectLatest { (state, id) ->
+                .collectLatest { (state, id, queueSize) ->
                     if (id.isNotBlank()) {
                         playedIds += id
                         while (playedIds.size > MAX_PLAYED) {
                             playedIds.remove(playedIds.first())
                         }
                     }
-                    if (state == PlaybackState.ENDED && _autoContinue.value) {
-                        onTrackEndedNeedMore()
+                    if (!_autoContinue.value) return@collectLatest
+                    when (state) {
+                        PlaybackState.ENDED -> onTrackEndedNeedMore()
+                        PlaybackState.PLAYING, PlaybackState.BUFFERING -> {
+                            // Single track or end of playlist: keep queue warm
+                            if (!player.hasNext()) {
+                                val seed = player.snapshot.value.track
+                                if (seed != null && (queueSize <= 1 || !player.hasNext())) {
+                                    ensureUpcoming(seed, playImmediately = false)
+                                }
+                            }
+                        }
+                        else -> Unit
                     }
                 }
         }
@@ -93,13 +113,18 @@ class RadioQueueManager @Inject constructor(
                 kotlinx.coroutines.delay(2_000)
                 if (!_autoContinue.value) continue
                 val snap = player.snapshot.value
-                if (snap.state != PlaybackState.PLAYING) continue
+                if (snap.state != PlaybackState.PLAYING &&
+                    snap.state != PlaybackState.BUFFERING
+                ) {
+                    continue
+                }
                 if (player.hasNext()) continue
+                val seed = snap.track ?: continue
                 val progress = snap.progress
-                if (progress.durationMs <= 0) continue
-                val left = progress.durationMs - progress.positionMs
-                if (left in 1..25_000L) {
-                    val seed = snap.track ?: continue
+                val nearEnd = progress.durationMs > 0 &&
+                    (progress.durationMs - progress.positionMs) in 1..45_000L
+                // Also prefill early for short queues so the next song is ready
+                if (nearEnd || snap.queue.size <= 1) {
                     ensureUpcoming(seed, playImmediately = false)
                 }
             }
@@ -108,6 +133,19 @@ class RadioQueueManager @Inject constructor(
 
     fun setAutoContinue(enabled: Boolean) {
         _autoContinue.value = enabled
+        _stationActive.value = enabled
+        if (!enabled) {
+            _stationLabel.value = null
+            fillJob?.cancel()
+        } else {
+            // Turning radio back on: immediately warm the queue if needed
+            scope.launch {
+                val seed = player.snapshot.value.track ?: return@launch
+                if (!player.hasNext()) {
+                    ensureUpcoming(seed, playImmediately = false)
+                }
+            }
+        }
         scope.launch { settings.setAutoContinue(enabled) }
     }
 
@@ -122,8 +160,10 @@ class RadioQueueManager @Inject constructor(
 
     /**
      * Explicit "Station" action — like YT Music / SoundCloud station from a track.
+     * Always turns auto-queue ON (radio) so playback keeps going after the station batch.
      */
     fun startStation(seed: Track) {
+        setAutoContinue(true)
         fillJob?.cancel()
         fillJob = scope.launch {
             mutex.withLock {
@@ -196,7 +236,9 @@ class RadioQueueManager @Inject constructor(
                 Log.w(TAG, "no related for auto-queue ${seed.id} crossplay=$cross")
                 return
             }
-            _stationActive.value = true
+            if (_autoContinue.value) {
+                _stationActive.value = true
+            }
             if (_stationLabel.value == null) {
                 val artist = seed.artists.firstOrNull()?.name.orEmpty()
                 _stationLabel.value = buildString {

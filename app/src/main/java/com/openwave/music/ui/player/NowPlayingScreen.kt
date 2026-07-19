@@ -29,14 +29,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ExpandMore
-import androidx.compose.material.icons.outlined.HourglassEmpty
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Radio
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Shuffle
@@ -84,6 +86,7 @@ import com.openwave.music.core.domain.PlaybackState
 import com.openwave.music.core.domain.PlayerSnapshot
 import com.openwave.music.core.domain.SleepTimerState
 import com.openwave.music.core.domain.Track
+import com.openwave.music.core.domain.TrackDisplay
 import com.openwave.music.ui.theme.OpenWaveTheme
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -108,9 +111,9 @@ fun NowPlayingScreen(
     onCollapse: () -> Unit,
     onShuffle: () -> Unit = {},
     onRepeat: () -> Unit = {},
-    onStartStation: () -> Unit = {},
-    stationActive: Boolean = false,
-    stationBuilding: Boolean = false,
+    onToggleAutoQueue: () -> Unit = {},
+    autoQueueEnabled: Boolean = true,
+    autoQueueBuilding: Boolean = false,
     voteLabel: String? = null,
     sleepState: SleepTimerState = SleepTimerState(),
     onSleepDurationMs: (Long) -> Unit = {},
@@ -216,7 +219,7 @@ fun NowPlayingScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // Secondary transport: shuffle / station (hourglass) / repeat
+            // Secondary transport: shuffle / auto-queue radio / repeat
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -230,10 +233,10 @@ fun NowPlayingScreen(
                     )
                 }
                 IconButton(
-                    onClick = onStartStation,
-                    enabled = track != null && !stationBuilding,
+                    onClick = onToggleAutoQueue,
+                    enabled = track != null,
                 ) {
-                    if (stationBuilding) {
+                    if (autoQueueBuilding && autoQueueEnabled) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(22.dp),
                             strokeWidth = 2.dp,
@@ -241,13 +244,21 @@ fun NowPlayingScreen(
                         )
                     } else {
                         Icon(
-                            imageVector = if (stationActive) {
-                                Icons.Filled.HourglassTop
+                            imageVector = if (autoQueueEnabled) {
+                                Icons.Filled.Radio
                             } else {
-                                Icons.Outlined.HourglassEmpty
+                                Icons.Outlined.Radio
                             },
-                            contentDescription = "Station / radio",
-                            tint = if (stationActive) scheme.primary else scheme.onSurfaceVariant,
+                            contentDescription = if (autoQueueEnabled) {
+                                "Tắt auto-queue"
+                            } else {
+                                "Bật auto-queue"
+                            },
+                            tint = if (autoQueueEnabled) {
+                                scheme.primary
+                            } else {
+                                scheme.onSurfaceVariant
+                            },
                         )
                     }
                 }
@@ -639,8 +650,7 @@ private fun TransportRow(
 }
 
 /**
- * Compact bottom mini-player — shared element candidate for expand animation.
- * Thin timeline at the bottom tracks live position and supports seek.
+ * Compact bottom mini-player — title + subtitle, favorite, play/pause, seek bar.
  */
 @Composable
 fun MiniPlayerBar(
@@ -648,6 +658,8 @@ fun MiniPlayerBar(
     onPlayPause: () -> Unit,
     onExpand: () -> Unit,
     onSeek: (Long) -> Unit = {},
+    isFavorite: Boolean = false,
+    onToggleFavorite: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val track = snapshot.track ?: return
@@ -656,6 +668,7 @@ fun MiniPlayerBar(
     var scrubbing by remember { mutableFloatStateOf(-1f) }
     val progress = snapshot.progress
     val displayFraction = if (scrubbing >= 0f) scrubbing else progress.fraction
+    val subtitle = TrackDisplay.subtitle(track)
 
     Surface(
         onClick = onExpand,
@@ -670,9 +683,9 @@ fun MiniPlayerBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 4.dp),
+                    .padding(start = 12.dp, end = 8.dp, top = 10.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Box(
                     modifier = Modifier
@@ -696,14 +709,44 @@ fun MiniPlayerBar(
                         )
                     }
                 }
-                Text(
-                    text = track.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = scheme.onSecondaryContainer,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 4.dp),
+                ) {
+                    Text(
+                        text = track.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = scheme.onSecondaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSecondaryContainer.copy(alpha = 0.75f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                IconButton(
+                    onClick = onToggleFavorite,
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Icon(
+                        imageVector = if (isFavorite) {
+                            Icons.Filled.Favorite
+                        } else {
+                            Icons.Outlined.FavoriteBorder
+                        },
+                        contentDescription = if (isFavorite) {
+                            "Bỏ yêu thích"
+                        } else {
+                            "Thêm vào Yêu thích"
+                        },
+                        tint = if (isFavorite) scheme.error else scheme.onSecondaryContainer,
+                    )
+                }
                 FilledIconButton(
                     onClick = onPlayPause,
                     shape = CircleShape,

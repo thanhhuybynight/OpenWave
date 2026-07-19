@@ -80,8 +80,8 @@ fun SettingsScreen(
         ) {
             SectionLabel("Phát nhạc")
             SettingsSwitchRow(
-                title = "Auto radio",
-                description = "Tự thêm bài liên quan khi hết hàng đợi",
+                title = "Auto-queue (Radio)",
+                description = "Luôn bật mặc định: khi hết hàng đợi sẽ phát tiếp bài liên quan ngẫu nhiên. Tắt bằng nút radio trên Now Playing.",
                 checked = autoContinue,
                 onCheckedChange = vm::setAutoContinue,
             )

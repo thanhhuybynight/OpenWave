@@ -123,8 +123,9 @@ fun OpenWaveNavHost(
     val isResolving by playerVm.isResolving.collectAsStateWithLifecycle()
     val playError by playerVm.playError.collectAsStateWithLifecycle()
     val sleepState by playerVm.sleepState.collectAsStateWithLifecycle()
-    val stationActive by playerVm.stationActive.collectAsStateWithLifecycle()
+    val autoContinue by playerVm.autoContinue.collectAsStateWithLifecycle()
     val stationBuilding by playerVm.stationBuilding.collectAsStateWithLifecycle()
+    val favoriteIds by libraryVm.favoriteIds.collectAsStateWithLifecycle()
     var showFullPlayer by remember { mutableStateOf(false) }
     var addTrack by remember { mutableStateOf<Track?>(null) }
 
@@ -249,7 +250,6 @@ fun OpenWaveNavHost(
                         )
                     }
                     composable(RootDest.Search.route) {
-                        val favoriteIds by libraryVm.favoriteIds.collectAsStateWithLifecycle()
                         SearchScreen(
                             onPlayTrack = { track -> playerVm.playTrack(track) },
                             onPlayUnified = { hit -> playerVm.playUnified(hit) },
@@ -327,6 +327,10 @@ fun OpenWaveNavHost(
                         onPlayPause = playerVm::togglePlayPause,
                         onExpand = { showFullPlayer = true },
                         onSeek = playerVm::seekTo,
+                        isFavorite = snapshot.track?.id in favoriteIds,
+                        onToggleFavorite = {
+                            snapshot.track?.let { libraryVm.toggleFavorite(it) }
+                        },
                     )
                 }
             }
@@ -347,9 +351,9 @@ fun OpenWaveNavHost(
                 onCollapse = { showFullPlayer = false },
                 onShuffle = playerVm::toggleShuffle,
                 onRepeat = playerVm::cycleRepeat,
-                onStartStation = playerVm::startStationFromCurrent,
-                stationActive = stationActive,
-                stationBuilding = stationBuilding,
+                onToggleAutoQueue = playerVm::toggleAutoContinue,
+                autoQueueEnabled = autoContinue,
+                autoQueueBuilding = stationBuilding,
                 voteLabel = voteLabel,
                 sleepState = sleepState,
                 onSleepDurationMs = playerVm::startSleepTimer,

@@ -30,7 +30,7 @@ import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.HourglassEmpty
+import androidx.compose.material.icons.outlined.Radio
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -294,8 +294,8 @@ private fun SwipeRevealTrackRow(
                 },
             ) {
                 Icon(
-                    Icons.Outlined.HourglassEmpty,
-                    contentDescription = "Station / radio",
+                    Icons.Outlined.Radio,
+                    contentDescription = "Radio station",
                     tint = scheme.primary,
                 )
             }
