@@ -1,6 +1,7 @@
 package com.openwave.music.data.source.soundcloud
 
 import android.util.Log
+import com.openwave.music.core.domain.Album
 import com.openwave.music.core.domain.Artist
 import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.MusicSourceClient
@@ -195,17 +196,32 @@ class SoundCloudSourceClient @Inject constructor(
             .ifBlank { user?.optString("avatar_url").orEmpty() }
             .replace("-large", "-t500x500")
         val duration = o.optLong("duration")
+        val artists = listOf(
+            Artist(
+                id = "sc-user-${user?.optLong("id")}",
+                name = artistName,
+                source = MusicSource.SOUNDCLOUD,
+                imageUrl = user?.optString("avatar_url"),
+            ),
+        )
+        val albumTitle = o.optJSONObject("publisher_metadata")
+            ?.optString("album_title")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+        val album = albumTitle?.let { name ->
+            Album(
+                id = "sc-album-${name.hashCode()}",
+                title = name,
+                artists = artists,
+                source = MusicSource.SOUNDCLOUD,
+                coverUrl = art.ifBlank { null },
+            )
+        }
         return Track(
             id = "sc:$id",
             title = title,
-            artists = listOf(
-                Artist(
-                    id = "sc-user-${user?.optLong("id")}",
-                    name = artistName,
-                    source = MusicSource.SOUNDCLOUD,
-                    imageUrl = user?.optString("avatar_url"),
-                ),
-            ),
+            artists = artists,
+            album = album,
             durationMs = duration,
             source = MusicSource.SOUNDCLOUD,
             coverUrl = art.ifBlank { null },

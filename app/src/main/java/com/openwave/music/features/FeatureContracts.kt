@@ -53,6 +53,14 @@ interface LibraryRepository {
     /** Unique tracks ordered by most recent listen first. */
     fun recentPlays(limit: Int = 50): Flow<List<RecentPlay>>
     suspend fun recordPlay(event: PlayEvent)
+
+    /** Liked tracks ("Yêu thích"), newest first. */
+    fun favorites(): Flow<List<Track>>
+    fun favoriteIds(): Flow<Set<String>>
+    suspend fun isFavorite(trackId: String): Boolean
+    suspend fun addFavorite(track: Track)
+    suspend fun removeFavorite(trackId: String)
+    suspend fun toggleFavorite(track: Track): Boolean
 }
 
 interface UserProfileRepository {

@@ -249,6 +249,7 @@ fun OpenWaveNavHost(
                         )
                     }
                     composable(RootDest.Search.route) {
+                        val favoriteIds by libraryVm.favoriteIds.collectAsStateWithLifecycle()
                         SearchScreen(
                             onPlayTrack = { track -> playerVm.playTrack(track) },
                             onPlayUnified = { hit -> playerVm.playUnified(hit) },
@@ -259,6 +260,8 @@ fun OpenWaveNavHost(
                                 playerVm.startStation(track)
                                 showFullPlayer = true
                             },
+                            onToggleFavorite = { track -> libraryVm.toggleFavorite(track) },
+                            favoriteIds = favoriteIds,
                             isResolving = isResolving || stationBuilding,
                             playError = playError,
                             onClearError = playerVm::clearPlayError,

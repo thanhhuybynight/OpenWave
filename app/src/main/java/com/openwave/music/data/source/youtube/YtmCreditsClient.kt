@@ -1,6 +1,7 @@
 package com.openwave.music.data.source.youtube
 
 import android.util.Log
+import com.openwave.music.core.domain.Album
 import com.openwave.music.core.domain.Artist
 import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.Track
@@ -145,19 +146,69 @@ class YtmCreditsClient @Inject constructor(
         val artists = creditRuns.mapNotNull { parseArtistRun(it) }
             .distinctBy { it.id.ifBlank { it.name.lowercase() } }
         if (artists.isEmpty()) return null
+        val albumTitle = albumTitleFromRuns(creditRuns)
         val thumbs = item.optJSONObject("thumbnail")
             ?.optJSONObject("musicThumbnailRenderer")
             ?.optJSONObject("thumbnail")
             ?.optJSONArray("thumbnails")
         val cover = bestThumb(thumbs)
+        val album = albumTitle?.let { name ->
+            Album(
+                id = "yt-album-${name.hashCode()}",
+                title = name,
+                artists = artists,
+                source = MusicSource.YOUTUBE_MUSIC,
+                coverUrl = cover,
+            )
+        }
         return Track(
             id = videoId,
             title = title,
             artists = artists,
+            album = album,
             source = MusicSource.YOUTUBE_MUSIC,
             coverUrl = cover,
             sourceUri = "https://music.youtube.com/watch?v=$videoId",
         )
+    }
+
+    /**
+     * YTM flex byline: `Artist • Album • 3:45` (or Single with no album run).
+     * Prefer MUSIC_PAGE_TYPE_ALBUM; else first non-separator, non-duration text
+     * that is not an artist link.
+     */
+    private fun albumTitleFromRuns(runs: List<JSONObject>): String? {
+        for (run in runs) {
+            val pageType = run.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("browseEndpoint")
+                ?.optJSONObject("browseEndpointContextSupportedConfigs")
+                ?.optJSONObject("browseEndpointContextMusicConfig")
+                ?.optString("pageType")
+                .orEmpty()
+            if (pageType == "MUSIC_PAGE_TYPE_ALBUM") {
+                val name = run.optString("text").trim()
+                if (name.isNotBlank()) return name
+            }
+        }
+        val artistNames = runs.mapNotNull { parseArtistRun(it)?.name?.lowercase() }.toSet()
+        for (run in runs) {
+            val text = run.optString("text").trim()
+            if (text.isBlank()) continue
+            if (text == "•" || text == "·" || text == "-" || text == "–" || text == "&") continue
+            if (text.matches(DURATION_RE)) continue
+            if (text.lowercase() in artistNames) continue
+            // Skip pure separators mixed into longer runs
+            if (text.all { it.isWhitespace() || it in "•·&,-–" }) continue
+            val pageType = run.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("browseEndpoint")
+                ?.optJSONObject("browseEndpointContextSupportedConfigs")
+                ?.optJSONObject("browseEndpointContextMusicConfig")
+                ?.optString("pageType")
+                .orEmpty()
+            if (pageType == "MUSIC_PAGE_TYPE_ARTIST") continue
+            return text
+        }
+        return null
     }
 
     private fun parseArtistRun(run: JSONObject): Artist? {
@@ -329,6 +380,7 @@ class YtmCreditsClient @Inject constructor(
         private const val CLIENT_NAME = "WEB_REMIX"
         private const val CLIENT_VERSION = "1.20241204.01.00"
         private val JSON = "application/json".toMediaType()
+        private val DURATION_RE = Regex("""^\d{1,2}:\d{2}(?::\d{2})?$""")
         private const val UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"

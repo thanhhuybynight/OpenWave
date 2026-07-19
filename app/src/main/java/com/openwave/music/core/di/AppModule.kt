@@ -10,12 +10,12 @@ import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.MusicSourceClient
 import com.openwave.music.data.cache.StreamUrlCache
 import com.openwave.music.data.local.DownloadDao
+import com.openwave.music.data.local.FavoriteDao
 import com.openwave.music.data.local.OpenWaveDatabase
 import com.openwave.music.data.local.PlayEventDao
 import com.openwave.music.data.local.PlaylistDao
 import com.openwave.music.data.local.ScrobbleDao
 import com.openwave.music.data.repository.FastMusicCatalogImpl
-import com.openwave.music.data.source.DemoSourceClient
 import com.openwave.music.data.source.soundcloud.SoundCloudSourceClient
 import com.openwave.music.data.source.youtube.YouTubeMusicSourceClient
 import dagger.Module
@@ -64,23 +64,24 @@ object AppModule {
     @Provides fun playEventDao(db: OpenWaveDatabase): PlayEventDao = db.playEventDao()
     @Provides fun playlistDao(db: OpenWaveDatabase): PlaylistDao = db.playlistDao()
     @Provides fun downloadDao(db: OpenWaveDatabase): DownloadDao = db.downloadDao()
+    @Provides fun favoriteDao(db: OpenWaveDatabase): FavoriteDao = db.favoriteDao()
 
     @Provides
     @Singleton
-    fun provideAggregatorConfig(): AggregatorConfig = AggregatorConfig()
+    fun provideAggregatorConfig(): AggregatorConfig = AggregatorConfig(
+        // Free remote sources only — no local/demo in multi-source search
+        sourcePriority = listOf(
+            MusicSource.YOUTUBE_MUSIC,
+            MusicSource.SOUNDCLOUD,
+        ),
+    )
 
     @Provides
     @Singleton
     fun provideSourceClients(
         yt: YouTubeMusicSourceClient,
         sc: SoundCloudSourceClient,
-        demo: DemoSourceClient,
-    ): Set<@JvmSuppressWildcards MusicSourceClient> = buildSet {
-        add(yt)
-        add(sc)
-        // Demo catalog only in debug — never pollute release search with fake tracks
-        if (BuildConfig.DEBUG) add(demo)
-    }
+    ): Set<@JvmSuppressWildcards MusicSourceClient> = setOf(yt, sc)
 
     @Provides
     @Singleton

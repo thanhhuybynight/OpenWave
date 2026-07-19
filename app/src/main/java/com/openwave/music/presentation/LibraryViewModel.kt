@@ -24,6 +24,9 @@ import javax.inject.Inject
 
 enum class LibraryTab { Playlists, Downloads, Stats, History }
 
+/** Special open id for the built-in Favorites detail screen. */
+const val FavoritesPlaylistId = "__favorites__"
+
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
@@ -37,6 +40,12 @@ class LibraryViewModel @Inject constructor(
 
     val playlists: StateFlow<List<LocalPlaylist>> = library.playlists()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val favorites: StateFlow<List<Track>> = library.favorites()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val favoriteIds: StateFlow<Set<String>> = library.favoriteIds()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     val downloads: StateFlow<List<OfflineTrack>> = offline.downloads()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -52,7 +61,11 @@ class LibraryViewModel @Inject constructor(
 
     val playlistTracks: StateFlow<List<Track>> = _selectedPlaylistId
         .flatMapLatest { id ->
-            if (id == null) flowOf(emptyList()) else library.playlistTracks(id)
+            when {
+                id == null -> flowOf(emptyList())
+                id == FavoritesPlaylistId -> library.favorites()
+                else -> library.playlistTracks(id)
+            }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -105,7 +118,11 @@ class LibraryViewModel @Inject constructor(
 
     fun removeFromPlaylist(playlistId: String, trackId: String) {
         viewModelScope.launch {
-            library.removeFromPlaylist(playlistId, trackId)
+            if (playlistId == FavoritesPlaylistId) {
+                library.removeFavorite(trackId)
+            } else {
+                library.removeFromPlaylist(playlistId, trackId)
+            }
         }
     }
 
@@ -113,6 +130,23 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             library.addToPlaylist(playlistId, track)
             _message.value = "Added to playlist"
+        }
+    }
+
+    fun openFavorites() {
+        _selectedPlaylistId.value = FavoritesPlaylistId
+    }
+
+    fun toggleFavorite(track: Track) {
+        viewModelScope.launch {
+            val liked = library.toggleFavorite(track)
+            _message.value = if (liked) "Đã thêm vào Yêu thích" else "Đã bỏ khỏi Yêu thích"
+        }
+    }
+
+    fun removeFavorite(trackId: String) {
+        viewModelScope.launch {
+            library.removeFavorite(trackId)
         }
     }
 
@@ -127,6 +161,8 @@ class LibraryViewModel @Inject constructor(
         _message.value = null
     }
 
-    fun playlistTitle(id: String?): String =
-        playlists.value.firstOrNull { it.id == id }?.title ?: "Playlist"
+    fun playlistTitle(id: String?): String = when (id) {
+        FavoritesPlaylistId -> "Yêu thích"
+        else -> playlists.value.firstOrNull { it.id == id }?.title ?: "Playlist"
+    }
 }

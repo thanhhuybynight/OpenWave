@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DownloadDone
@@ -73,6 +74,8 @@ import com.openwave.music.core.domain.OfflineTrack
 import com.openwave.music.core.domain.ScrobbleEntry
 import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.TrackStats
+import com.openwave.music.core.domain.TrackDisplay
+import com.openwave.music.presentation.FavoritesPlaylistId
 import com.openwave.music.presentation.LibraryTab
 import com.openwave.music.presentation.LibraryViewModel
 import java.util.Locale
@@ -87,6 +90,7 @@ fun LibraryScreen(
 ) {
     val tab by vm.tab.collectAsStateWithLifecycle()
     val playlists by vm.playlists.collectAsStateWithLifecycle()
+    val favorites by vm.favorites.collectAsStateWithLifecycle()
     val downloads by vm.downloads.collectAsStateWithLifecycle()
     val stats by vm.stats.collectAsStateWithLifecycle()
     val scrobbles by vm.scrobbles.collectAsStateWithLifecycle()
@@ -142,6 +146,7 @@ fun LibraryScreen(
                 PlaylistDetail(
                     title = vm.playlistTitle(openId),
                     tracks = playlistTracks,
+                    isFavorites = openId == FavoritesPlaylistId,
                     onBack = vm::closePlaylist,
                     onPlayAll = {
                         if (playlistTracks.isNotEmpty()) onPlayQueue(playlistTracks, 0)
@@ -153,9 +158,10 @@ fun LibraryScreen(
                         vm.removeFromPlaylist(openId, trackId)
                     },
                     onDeletePlaylist = {
-                        vm.deletePlaylist(openId)
+                        if (openId != FavoritesPlaylistId) vm.deletePlaylist(openId)
                     },
                     onRename = {
+                        if (openId == FavoritesPlaylistId) return@PlaylistDetail
                         val pl = playlists.firstOrNull { it.id == openId }
                         if (pl != null) renameTarget = pl
                     },
@@ -187,6 +193,8 @@ fun LibraryScreen(
                 when (tab) {
                     LibraryTab.Playlists -> PlaylistsTab(
                         playlists = playlists,
+                        favoriteCount = favorites.size,
+                        onOpenFavorites = vm::openFavorites,
                         onOpen = vm::openPlaylist,
                         onCreate = { showCreate = true },
                         onDelete = vm::deletePlaylist,
@@ -247,6 +255,8 @@ fun LibraryScreen(
 @Composable
 private fun PlaylistsTab(
     playlists: List<LocalPlaylist>,
+    favoriteCount: Int,
+    onOpenFavorites: () -> Unit,
     onOpen: (String) -> Unit,
     onCreate: () -> Unit,
     onDelete: (String) -> Unit,
@@ -255,6 +265,12 @@ private fun PlaylistsTab(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        item {
+            FavoritesRow(
+                count = favoriteCount,
+                onClick = onOpenFavorites,
+            )
+        }
         item {
             FilledTonalButton(
                 onClick = onCreate,
@@ -278,6 +294,56 @@ private fun PlaylistsTab(
             )
         }
         item { Spacer(Modifier.height(80.dp)) }
+    }
+}
+
+@Composable
+private fun FavoritesRow(
+    count: Int,
+    onClick: () -> Unit,
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.Favorite,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(28.dp),
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Yêu thích",
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    if (count == 0) "Chưa có bài hát" else "$count bài hát",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
@@ -357,6 +423,7 @@ private fun PlaylistRow(
 private fun PlaylistDetail(
     title: String,
     tracks: List<Track>,
+    isFavorites: Boolean = false,
     onBack: () -> Unit,
     onPlayAll: () -> Unit,
     onPlayTrack: (Int, Track) -> Unit,
@@ -381,9 +448,11 @@ private fun PlaylistDetail(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = onRename) { Text("Rename") }
-            IconButton(onClick = onDeletePlaylist) {
-                Icon(Icons.Outlined.Delete, contentDescription = "Delete playlist")
+            if (!isFavorites) {
+                TextButton(onClick = onRename) { Text("Rename") }
+                IconButton(onClick = onDeletePlaylist) {
+                    Icon(Icons.Outlined.Delete, contentDescription = "Delete playlist")
+                }
             }
         }
 
@@ -399,7 +468,13 @@ private fun PlaylistDetail(
                 Text("Play all (${tracks.size})")
             }
         } else {
-            EmptyHint("This playlist is empty. Open Search, play a track, or use Add to playlist.")
+            EmptyHint(
+                if (isFavorites) {
+                    "Chưa có bài yêu thích. Nhấn trái tim trên kết quả tìm kiếm."
+                } else {
+                    "This playlist is empty. Open Search, play a track, or use Add to playlist."
+                },
+            )
         }
 
         LazyColumn(
@@ -409,11 +484,19 @@ private fun PlaylistDetail(
                 val track = tracks[index]
                 TrackLine(
                     title = track.title,
-                    subtitle = track.artists.joinToString { it.name },
+                    subtitle = TrackDisplay.subtitle(track),
                     coverUrl = track.coverUrl,
                     trailing = {
                         IconButton(onClick = { onRemove(track.id) }) {
-                            Icon(Icons.Outlined.Delete, contentDescription = "Remove")
+                            Icon(
+                                if (isFavorites) Icons.Filled.Favorite else Icons.Outlined.Delete,
+                                contentDescription = if (isFavorites) "Bỏ yêu thích" else "Remove",
+                                tint = if (isFavorites) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
                         }
                     },
                     onClick = { onPlayTrack(index, track) },
@@ -547,7 +630,7 @@ private fun TrackLine(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(48.dp)
-                        .clip(RoundedCornerShape(10.dp)),
+                        .clip(RoundedCornerShape(12.dp)),
                 )
             }
             leadingIcon != null -> {
@@ -559,7 +642,7 @@ private fun TrackLine(
                 Box(
                     Modifier
                         .size(48.dp)
-                        .clip(RoundedCornerShape(10.dp)),
+                        .clip(RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -571,20 +654,35 @@ private fun TrackLine(
             }
         }
         Spacer(Modifier.width(12.dp))
-        Text(
-            title,
-            style = MaterialTheme.typography.titleMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (subtitle.isNotBlank()) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         trailing?.invoke()
     }
 }
 
 @Composable
 private fun EmptyHint(text: String) {
-    // Intentionally empty — titles only, no secondary empty-state copy
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp),
+    )
 }
 
 @Composable

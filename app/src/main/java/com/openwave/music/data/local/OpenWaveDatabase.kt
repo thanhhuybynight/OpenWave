@@ -75,6 +75,20 @@ data class DownloadEntity(
     val downloadedAtMs: Long,
 )
 
+@Entity(tableName = "favorites")
+data class FavoriteEntity(
+    @PrimaryKey val trackId: String,
+    val title: String,
+    val artist: String,
+    val album: String?,
+    val source: String,
+    val coverUrl: String?,
+    val durationMs: Long,
+    val streamUrl: String?,
+    val sourceUri: String?,
+    val addedAtMs: Long,
+)
+
 @Dao
 interface ScrobbleDao {
     @Query("SELECT * FROM scrobbles ORDER BY startedAtMs DESC LIMIT :limit")
@@ -189,6 +203,24 @@ interface DownloadDao {
     suspend fun delete(trackId: String)
 }
 
+@Dao
+interface FavoriteDao {
+    @Query("SELECT * FROM favorites ORDER BY addedAtMs DESC")
+    fun all(): Flow<List<FavoriteEntity>>
+
+    @Query("SELECT trackId FROM favorites")
+    fun ids(): Flow<List<String>>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE trackId = :trackId)")
+    suspend fun isFavorite(trackId: String): Boolean
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: FavoriteEntity)
+
+    @Query("DELETE FROM favorites WHERE trackId = :trackId")
+    suspend fun delete(trackId: String)
+}
+
 @Database(
     entities = [
         ScrobbleEntity::class,
@@ -196,8 +228,9 @@ interface DownloadDao {
         PlaylistEntity::class,
         PlaylistTrackEntity::class,
         DownloadEntity::class,
+        FavoriteEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class OpenWaveDatabase : RoomDatabase() {
@@ -205,4 +238,5 @@ abstract class OpenWaveDatabase : RoomDatabase() {
     abstract fun playEventDao(): PlayEventDao
     abstract fun playlistDao(): PlaylistDao
     abstract fun downloadDao(): DownloadDao
+    abstract fun favoriteDao(): FavoriteDao
 }

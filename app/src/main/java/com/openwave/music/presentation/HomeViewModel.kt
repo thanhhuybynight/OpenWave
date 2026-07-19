@@ -50,12 +50,34 @@ class HomeViewModel @Inject constructor(
                     else -> {
                         val shelves = browse.homeShelves()
                         HomeFeed(
-                            recommendations = shelves.firstOrNull()
-                                ?: BrowseShelf("de_xuat", "Đề xuất", com.openwave.music.core.domain.BrowseShelfKind.RECOMMENDATIONS),
-                            topSongs = shelves.getOrNull(1)
-                                ?: BrowseShelf("songs", "Bài hát hàng đầu", com.openwave.music.core.domain.BrowseShelfKind.TOP_SONGS),
-                            topArtists = shelves.getOrNull(2)
-                                ?: BrowseShelf("artists", "Nghệ sĩ hàng đầu", com.openwave.music.core.domain.BrowseShelfKind.TOP_ARTISTS),
+                            recommendations = shelves.firstOrNull {
+                                it.kind == com.openwave.music.core.domain.BrowseShelfKind.RECOMMENDATIONS
+                            } ?: BrowseShelf(
+                                "de_xuat",
+                                "Đề xuất",
+                                com.openwave.music.core.domain.BrowseShelfKind.RECOMMENDATIONS,
+                            ),
+                            topSongs = shelves.firstOrNull {
+                                it.kind == com.openwave.music.core.domain.BrowseShelfKind.TOP_SONGS
+                            } ?: BrowseShelf(
+                                "songs",
+                                "Bài hát hàng đầu",
+                                com.openwave.music.core.domain.BrowseShelfKind.TOP_SONGS,
+                            ),
+                            topArtists = shelves.firstOrNull {
+                                it.kind == com.openwave.music.core.domain.BrowseShelfKind.TOP_ARTISTS
+                            } ?: BrowseShelf(
+                                "artists",
+                                "Nghệ sĩ hàng đầu",
+                                com.openwave.music.core.domain.BrowseShelfKind.TOP_ARTISTS,
+                            ),
+                            listenAgain = shelves.firstOrNull {
+                                it.kind == com.openwave.music.core.domain.BrowseShelfKind.LISTEN_AGAIN
+                            } ?: BrowseShelf(
+                                "nghe_lai",
+                                "Nghe lại",
+                                com.openwave.music.core.domain.BrowseShelfKind.LISTEN_AGAIN,
+                            ),
                         )
                     }
                 }

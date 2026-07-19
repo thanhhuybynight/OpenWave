@@ -1,11 +1,14 @@
 package com.openwave.music.features.library
 
+import com.openwave.music.core.domain.Album
 import com.openwave.music.core.domain.Artist
 import com.openwave.music.core.domain.LocalPlaylist
 import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.PlayEvent
 import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.TrackStats
+import com.openwave.music.data.local.FavoriteDao
+import com.openwave.music.data.local.FavoriteEntity
 import com.openwave.music.data.local.PlayEventDao
 import com.openwave.music.data.local.PlayEventEntity
 import com.openwave.music.data.local.PlaylistDao
@@ -22,6 +25,7 @@ import javax.inject.Singleton
 class RoomLibraryRepository @Inject constructor(
     private val playlists: PlaylistDao,
     private val events: PlayEventDao,
+    private val favoriteDao: FavoriteDao,
 ) : LibraryRepository {
 
     override fun playlists(): Flow<List<LocalPlaylist>> =
@@ -181,4 +185,77 @@ class RoomLibraryRepository @Inject constructor(
             ),
         )
     }
+
+    override fun favorites(): Flow<List<Track>> =
+        favoriteDao.all().map { rows -> rows.map { it.toTrack() } }
+
+    override fun favoriteIds(): Flow<Set<String>> =
+        favoriteDao.ids().map { it.toSet() }
+
+    override suspend fun isFavorite(trackId: String): Boolean =
+        favoriteDao.isFavorite(trackId)
+
+    override suspend fun addFavorite(track: Track) {
+        favoriteDao.upsert(track.toFavoriteEntity())
+    }
+
+    override suspend fun removeFavorite(trackId: String) {
+        favoriteDao.delete(trackId)
+    }
+
+    override suspend fun toggleFavorite(track: Track): Boolean {
+        return if (favoriteDao.isFavorite(track.id)) {
+            favoriteDao.delete(track.id)
+            false
+        } else {
+            favoriteDao.upsert(track.toFavoriteEntity())
+            true
+        }
+    }
+
+    private fun FavoriteEntity.toTrack(): Track {
+        val source = runCatching { MusicSource.valueOf(source) }
+            .getOrDefault(MusicSource.UNKNOWN)
+        val artists = listOf(
+            Artist(
+                id = "fav-artist-$trackId",
+                name = artist,
+                source = source,
+            ),
+        )
+        val album = album?.takeIf { it.isNotBlank() }?.let { title ->
+            Album(
+                id = "fav-album-$trackId",
+                title = title,
+                artists = artists,
+                source = source,
+                coverUrl = coverUrl,
+            )
+        }
+        return Track(
+            id = trackId,
+            title = title,
+            artists = artists,
+            album = album,
+            durationMs = durationMs,
+            source = source,
+            coverUrl = coverUrl,
+            streamUrl = streamUrl,
+            sourceUri = sourceUri,
+        )
+    }
+
+    private fun Track.toFavoriteEntity(): FavoriteEntity =
+        FavoriteEntity(
+            trackId = id,
+            title = title,
+            artist = artists.joinToString { it.name },
+            album = album?.title,
+            source = source.name,
+            coverUrl = coverUrl,
+            durationMs = durationMs,
+            streamUrl = streamUrl,
+            sourceUri = sourceUri,
+            addedAtMs = System.currentTimeMillis(),
+        )
 }

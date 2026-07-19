@@ -51,7 +51,9 @@ class FastMusicCatalogImpl @Inject constructor(
         val ordered = config.sourcePriority
         return clients
             .filter { c ->
-                (sources == null || c.source in sources) &&
+                // Never search local/demo catalog in the hub search bar
+                c.source != MusicSource.LOCAL &&
+                    (sources == null || c.source in sources) &&
                     // Search may include metadata-only sources; stream gated later
                     (c.supportsAnonymousPlayback ||
                         c.source == MusicSource.SPOTIFY_METADATA ||

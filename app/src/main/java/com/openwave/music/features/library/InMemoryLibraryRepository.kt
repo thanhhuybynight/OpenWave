@@ -21,6 +21,7 @@ class InMemoryLibraryRepository @Inject constructor() : LibraryRepository {
     private val _playlists = MutableStateFlow<List<LocalPlaylist>>(emptyList())
     private val tracks = MutableStateFlow<Map<String, List<Track>>>(emptyMap())
     private val events = MutableStateFlow<List<PlayEvent>>(emptyList())
+    private val _favorites = MutableStateFlow<List<Track>>(emptyList())
 
     override fun playlists(): Flow<List<LocalPlaylist>> = _playlists.asStateFlow()
 
@@ -104,5 +105,29 @@ class InMemoryLibraryRepository @Inject constructor() : LibraryRepository {
 
     override suspend fun recordPlay(event: PlayEvent) {
         events.update { listOf(event) + it }
+    }
+
+    override fun favorites(): Flow<List<Track>> = _favorites.asStateFlow()
+
+    override fun favoriteIds(): Flow<Set<String>> =
+        _favorites.map { list -> list.map { it.id }.toSet() }
+
+    override suspend fun isFavorite(trackId: String): Boolean =
+        _favorites.value.any { it.id == trackId }
+
+    override suspend fun addFavorite(track: Track) {
+        _favorites.update { cur ->
+            listOf(track) + cur.filterNot { it.id == track.id }
+        }
+    }
+
+    override suspend fun removeFavorite(trackId: String) {
+        _favorites.update { it.filterNot { t -> t.id == trackId } }
+    }
+
+    override suspend fun toggleFavorite(track: Track): Boolean {
+        val liked = isFavorite(track.id)
+        if (liked) removeFavorite(track.id) else addFavorite(track)
+        return !liked
     }
 }

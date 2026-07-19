@@ -1,6 +1,5 @@
 package com.openwave.music.ui.home
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,11 +25,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -45,7 +42,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,7 +49,6 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import com.openwave.music.R
 import com.openwave.music.core.domain.BrowseItem
 import com.openwave.music.core.domain.Track
 import com.openwave.music.presentation.HomeViewModel
@@ -118,12 +113,6 @@ fun HomeScreen(
                 )
             }
 
-            item {
-                HeroCatBanner(
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-                )
-            }
-
             if (loading && feed == null) {
                 item {
                     Box(
@@ -153,6 +142,22 @@ fun HomeScreen(
             }
 
             feed?.let { home ->
+                val listenItems = home.listenAgain.items.filterIsInstance<BrowseItem.TrackItem>()
+                if (listenItems.isNotEmpty()) {
+                    item {
+                        MeadowSectionTitle(
+                            title = home.listenAgain.title.ifBlank { "Nghe lại" },
+                            emoji = "⏪",
+                        )
+                    }
+                    item {
+                        RecommendationRow(
+                            items = listenItems,
+                            onPlay = onPlayTrack,
+                        )
+                    }
+                }
+
                 item {
                     MeadowSectionTitle(
                         title = home.recommendations.title.ifBlank { "Dành cho bạn" },
@@ -173,7 +178,9 @@ fun HomeScreen(
                     MeadowSectionTitle(
                         title = "Hàng đầu",
                         emoji = "🌸",
-                        subtitle = home.chartDateLabel ?: home.topSongs.subtitle,
+                        subtitle = home.topSongs.subtitle
+                            ?: home.chartRegionLabel
+                            ?: home.chartDateLabel,
                     )
                 }
 
@@ -311,78 +318,6 @@ private fun HomeGreetingHeader(
                     .clip(RoundedCornerShape(4.dp)),
                 color = HomeMeadow.Blush,
                 trackColor = HomeMeadow.BlushPale,
-            )
-        }
-    }
-}
-
-@Composable
-private fun HeroCatBanner(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .shadow(
-                elevation = 10.dp,
-                shape = RoundedCornerShape(28.dp),
-                ambientColor = HomeMeadow.GrassDeep.copy(alpha = 0.18f),
-                spotColor = HomeMeadow.Blush.copy(alpha = 0.25f),
-            )
-            .clip(RoundedCornerShape(28.dp)),
-    ) {
-        Image(
-            painter = painterResource(R.drawable.home_hero_cat),
-            contentDescription = "Mèo đeo tai nghe giữa vườn hoa",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1.15f),
-        )
-        // Soft bottom gradient for caption legibility
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0.45f to Color.Transparent,
-                            0.78f to Color(0x66000000),
-                            1f to Color(0x99000000),
-                        ),
-                    ),
-                ),
-        )
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(18.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = HomeMeadow.BlushPale.copy(alpha = 0.92f),
-                ) {
-                    Icon(
-                        Icons.Outlined.Headphones,
-                        contentDescription = null,
-                        tint = HomeMeadow.RankPink,
-                        modifier = Modifier.padding(8.dp).size(18.dp),
-                    )
-                }
-                Text(
-                    text = "Nghe nhạc thảnh thơi",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "Tai nghe sẵn sàng · hoa nở quanh vườn",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.88f),
             )
         }
     }

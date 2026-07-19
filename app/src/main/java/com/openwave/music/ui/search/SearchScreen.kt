@@ -28,6 +28,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
@@ -49,7 +51,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -59,13 +60,14 @@ import coil.compose.AsyncImage
 import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.SourcePolicy
 import com.openwave.music.core.domain.Track
+import com.openwave.music.core.domain.TrackDisplay
 import com.openwave.music.core.domain.UnifiedTrack
 import com.openwave.music.presentation.SearchViewModel
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
 
-/** Width of the reveal panel (queue + radio). Swipe content right to open. */
+/** Width of the reveal panel (queue + radio + playlist). Swipe content right to open. */
 private val RevealWidth = 128.dp
 
 @Composable
@@ -76,6 +78,8 @@ fun SearchScreen(
     onAddToPlaylist: (Track) -> Unit = {},
     onAddToQueue: (Track) -> Unit = {},
     onStartStation: (Track) -> Unit = {},
+    onToggleFavorite: (Track) -> Unit = {},
+    favoriteIds: Set<String> = emptySet(),
     isResolving: Boolean = false,
     playError: String? = null,
     onClearError: () -> Unit = {},
@@ -132,17 +136,12 @@ fun SearchScreen(
             FilterChip(
                 selected = filter?.contains(MusicSource.YOUTUBE_MUSIC) == true,
                 onClick = { vm.toggleSource(MusicSource.YOUTUBE_MUSIC) },
-                label = { Text("YouTube") },
+                label = { Text("YouTube Music") },
             )
             FilterChip(
                 selected = filter?.contains(MusicSource.SOUNDCLOUD) == true,
                 onClick = { vm.toggleSource(MusicSource.SOUNDCLOUD) },
                 label = { Text("SoundCloud") },
-            )
-            FilterChip(
-                selected = filter?.contains(MusicSource.LOCAL) == true,
-                onClick = { vm.toggleSource(MusicSource.LOCAL) },
-                label = { Text("Demo") },
             )
         }
 
@@ -209,10 +208,12 @@ fun SearchScreen(
                 }
                 SwipeRevealTrackRow(
                     hit = hit,
+                    isFavorite = hit.track.id in favoriteIds,
                     onPlay = { onPlayUnified(hit) },
                     onQueue = { onAddToQueue(hit.track) },
                     onStation = { onStartStation(hit.track) },
                     onAddPlaylist = { onAddToPlaylist(hit.track) },
+                    onToggleFavorite = { onToggleFavorite(hit.track) },
                 )
             }
 
@@ -230,22 +231,25 @@ fun SearchScreen(
 }
 
 /**
- * Tap row → play. Swipe content to the right → reveal queue + radio (+ playlist).
+ * Tap row → play. Heart toggles favorites. Swipe right → queue / radio / playlist.
  */
 @Composable
 private fun SwipeRevealTrackRow(
     hit: UnifiedTrack,
+    isFavorite: Boolean,
     onPlay: () -> Unit,
     onQueue: () -> Unit,
     onStation: () -> Unit,
     onAddPlaylist: () -> Unit,
+    onToggleFavorite: () -> Unit,
 ) {
     val track = hit.track
     val scheme = MaterialTheme.colorScheme
-    val density = LocalDensity.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
     val revealPx = with(density) { RevealWidth.toPx() }
     val offsetX = remember(track.id) { Animatable(0f) }
     val scope = rememberCoroutineScope()
+    val subtitle = TrackDisplay.subtitle(track)
 
     fun snap(open: Boolean) {
         scope.launch {
@@ -262,7 +266,6 @@ private fun SwipeRevealTrackRow(
             .height(72.dp)
             .clip(RoundedCornerShape(12.dp)),
     ) {
-        // Actions under the row (left) — revealed when content slides right
         Row(
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -310,7 +313,6 @@ private fun SwipeRevealTrackRow(
             }
         }
 
-        // Foreground content
         Surface(
             color = scheme.surface,
             modifier = Modifier
@@ -368,15 +370,44 @@ private fun SwipeRevealTrackRow(
                     }
                 }
                 Spacer(Modifier.width(12.dp))
-                Text(
-                    text = track.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                Column(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(end = 8.dp),
-                )
+                        .padding(end = 4.dp),
+                ) {
+                    Text(
+                        text = track.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                IconButton(onClick = onToggleFavorite) {
+                    Icon(
+                        imageVector = if (isFavorite) {
+                            Icons.Filled.Favorite
+                        } else {
+                            Icons.Outlined.FavoriteBorder
+                        },
+                        contentDescription = if (isFavorite) {
+                            "Bỏ yêu thích"
+                        } else {
+                            "Thêm vào Yêu thích"
+                        },
+                        tint = if (isFavorite) {
+                            scheme.error
+                        } else {
+                            scheme.onSurfaceVariant
+                        },
+                    )
+                }
             }
         }
     }

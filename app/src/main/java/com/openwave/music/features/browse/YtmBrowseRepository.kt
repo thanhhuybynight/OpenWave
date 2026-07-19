@@ -1,16 +1,22 @@
 package com.openwave.music.features.browse
 
 import android.util.Log
+import com.openwave.music.core.domain.Artist
 import com.openwave.music.core.domain.BrowseItem
 import com.openwave.music.core.domain.BrowseShelf
 import com.openwave.music.core.domain.BrowseShelfKind
 import com.openwave.music.core.domain.HomeFeed
+import com.openwave.music.core.domain.MusicSource
+import com.openwave.music.core.domain.Track
+import com.openwave.music.data.source.IpRegionClient
 import com.openwave.music.data.source.youtube.YouTubeChartsClient
 import com.openwave.music.features.BrowseRepository
+import com.openwave.music.features.LibraryRepository
 import com.openwave.music.features.home.HistoryRecommendationEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import javax.inject.Inject
@@ -18,8 +24,9 @@ import javax.inject.Singleton
 
 /**
  * Home feed:
- * 1. **Đề xuất** — from local play history ([HistoryRecommendationEngine])
- * 2. **Hàng đầu** — YouTube Charts daily (https://charts.youtube.com)
+ * 1. **Nghe lại** — recent play history (hidden when empty)
+ * 2. **Đề xuất** — from local play history ([HistoryRecommendationEngine])
+ * 3. **Hàng đầu** — YouTube Charts for the user's IP region
  *    - Bài hát hàng đầu
  *    - Nghệ sĩ hàng đầu
  */
@@ -27,6 +34,8 @@ import javax.inject.Singleton
 class YtmBrowseRepository @Inject constructor(
     private val charts: YouTubeChartsClient,
     private val recommendations: HistoryRecommendationEngine,
+    private val library: LibraryRepository,
+    private val ipRegion: IpRegionClient,
 ) : BrowseRepository {
 
     @Volatile
@@ -41,6 +50,22 @@ class YtmBrowseRepository @Inject constructor(
         cache?.takeIf { now - cacheAt < CACHE_TTL_MS }?.let { return@withContext it }
 
         val feed = coroutineScope {
+            val regionJob = async {
+                runCatching { ipRegion.region() }
+                    .onFailure { Log.w(TAG, "ip region: ${it.message}") }
+                    .getOrNull()
+            }
+            val listenJob = async {
+                runCatching { listenAgainShelf(20) }
+                    .onFailure { Log.e(TAG, "listen again: ${it.message}", it) }
+                    .getOrElse {
+                        BrowseShelf(
+                            id = "nghe_lai",
+                            title = "Nghe lại",
+                            kind = BrowseShelfKind.LISTEN_AGAIN,
+                        )
+                    }
+            }
             val recsJob = async {
                 runCatching { recommendations.recommendations(24) }
                     .onFailure { Log.e(TAG, "recs: ${it.message}", it) }
@@ -53,12 +78,15 @@ class YtmBrowseRepository @Inject constructor(
                         )
                     }
             }
+            val region = regionJob.await()
+            val regionCode = region?.countryCode ?: preferredRegion()
             val chartsJob = async {
-                runCatching { charts.dailyCharts(preferredRegion = preferredRegion(), limit = 30) }
+                runCatching { charts.dailyCharts(preferredRegion = regionCode, limit = 30) }
                     .onFailure { Log.e(TAG, "charts: ${it.message}", it) }
                     .getOrNull()
             }
 
+            val listenAgain = listenJob.await()
             val recs = recsJob.await()
             val chart = chartsJob.await()
 
@@ -70,9 +98,13 @@ class YtmBrowseRepository @Inject constructor(
                 chart?.songsPeriod?.contains("WEEKLY", true) == true -> "theo tuần"
                 else -> null
             }
+            val regionLabel = regionDisplay(
+                chartRegion = chart?.region,
+                ipRegion = region,
+            )
             val chartSubtitle = buildString {
                 append("YouTube Charts")
-                if (chart != null) append(" · ").append(chart.region.uppercase(Locale.US))
+                if (regionLabel != null) append(" · ").append(regionLabel)
                 if (periodNote != null) append(" · ").append(periodNote)
                 if (dateLabel != null) append(" · ").append(dateLabel)
             }
@@ -117,7 +149,9 @@ class YtmBrowseRepository @Inject constructor(
                 recommendations = recs,
                 topSongs = topSongs,
                 topArtists = topArtists,
+                listenAgain = listenAgain,
                 chartDateLabel = dateLabel,
+                chartRegionLabel = regionLabel,
                 isPartial = chart == null,
             )
         }
@@ -130,6 +164,7 @@ class YtmBrowseRepository @Inject constructor(
     override suspend fun shelf(kind: BrowseShelfKind, params: String?): BrowseShelf {
         val feed = homeFeed()
         return when (kind) {
+            BrowseShelfKind.LISTEN_AGAIN -> feed.listenAgain
             BrowseShelfKind.RECOMMENDATIONS -> feed.recommendations
             BrowseShelfKind.TOP_SONGS -> feed.topSongs
             BrowseShelfKind.TOP_ARTISTS -> feed.topArtists
@@ -143,10 +178,61 @@ class YtmBrowseRepository @Inject constructor(
         cacheAt = 0L
     }
 
+    private suspend fun listenAgainShelf(limit: Int): BrowseShelf {
+        val plays = library.recentPlays(limit).first()
+        val items = plays.map { play ->
+            val source = play.source.takeIf { it != MusicSource.UNKNOWN }
+                ?: MusicSource.YOUTUBE_MUSIC
+            val track = Track(
+                id = play.trackId,
+                title = play.title,
+                artists = listOf(
+                    Artist(
+                        id = "recent-${play.trackId}",
+                        name = play.artist.ifBlank { "Unknown" },
+                        source = source,
+                    ),
+                ),
+                source = source,
+                coverUrl = play.coverUrl,
+            )
+            BrowseItem.TrackItem(
+                id = play.trackId,
+                title = play.title,
+                subtitle = play.artist,
+                coverUrl = play.coverUrl,
+                track = track,
+            )
+        }
+        return BrowseShelf(
+            id = "nghe_lai",
+            title = "Nghe lại",
+            kind = BrowseShelfKind.LISTEN_AGAIN,
+            items = items,
+        )
+    }
+
     private fun preferredRegion(): String {
-        // Prefer device locale country; US often has daily song charts.
         val device = Locale.getDefault().country.lowercase(Locale.US)
         return device.ifBlank { "us" }
+    }
+
+    private fun regionDisplay(
+        chartRegion: String?,
+        ipRegion: IpRegionClient.Region?,
+    ): String? {
+        val code = (chartRegion ?: ipRegion?.countryCode)
+            ?.uppercase(Locale.US)
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+        val name = ipRegion?.countryName
+            ?: runCatching {
+                Locale("", code).displayCountry.takeIf { it.isNotBlank() }
+            }.getOrNull()
+        return when {
+            name != null && !name.equals(code, ignoreCase = true) -> "$name ($code)"
+            else -> code
+        }
     }
 
     private fun formatViews(raw: String): String {

@@ -27,6 +27,7 @@ data class QualityPreference(
 
 enum class BrowseShelfKind {
     RECOMMENDATIONS,
+    LISTEN_AGAIN,
     TOP_SONGS,
     TOP_ARTISTS,
     HOME_QUICK_PICKS,
@@ -95,11 +96,25 @@ data class HomeFeed(
     val recommendations: BrowseShelf,
     val topSongs: BrowseShelf,
     val topArtists: BrowseShelf,
+    /** Previously played tracks; omit from UI when empty. */
+    val listenAgain: BrowseShelf = BrowseShelf(
+        id = "nghe_lai",
+        title = "Nghe lại",
+        kind = BrowseShelfKind.LISTEN_AGAIN,
+    ),
     val chartDateLabel: String? = null,
+    val chartRegionLabel: String? = null,
     val isPartial: Boolean = false,
 ) {
-    fun shelves(): List<BrowseShelf> = listOf(recommendations, topSongs, topArtists)
-        .filter { it.items.isNotEmpty() || it.kind == BrowseShelfKind.RECOMMENDATIONS }
+    fun shelves(): List<BrowseShelf> = listOf(
+        listenAgain,
+        recommendations,
+        topSongs,
+        topArtists,
+    ).filter {
+        it.items.isNotEmpty() ||
+            it.kind == BrowseShelfKind.RECOMMENDATIONS
+    }
 }
 
 // ── Library / playlists / stats ─────────────────────────────────────────────

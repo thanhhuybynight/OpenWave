@@ -53,7 +53,6 @@ data class AggregatorConfig(
     val sourcePriority: List<MusicSource> = listOf(
         MusicSource.YOUTUBE_MUSIC,
         MusicSource.SOUNDCLOUD,
-        MusicSource.LOCAL,
         MusicSource.SPOTIFY_METADATA,
         MusicSource.APPLE_MUSIC_METADATA,
     ),
