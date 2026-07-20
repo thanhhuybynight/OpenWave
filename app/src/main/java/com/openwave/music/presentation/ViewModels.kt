@@ -134,9 +134,9 @@ class PlayerViewModel @Inject constructor(
                     _playError.value = "Player not ready. Try again."
                     return@launch
                 }
-                // Resolve real YTM performers before play; history is written once on end
-                // (PlaybackCoordinator) to avoid double-counting stats.
-                val credited = enrichCredits(track)
+                // Resolve YTM album + performers before play; chart payloads omit album metadata.
+                // History is written once on end (PlaybackCoordinator) to avoid double-counting stats.
+                val credited = enrichMetadata(track)
                 val local = offline.localStreamPath(credited.id)
                 val stream = if (local != null) {
                     null
@@ -162,11 +162,8 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Prefer YTM /next performer list (every MUSIC_PAGE_TYPE_ARTIST run + UC browse id).
-     * Never trust a single topic-channel / joined "A & B" uploader as the only credit.
-     */
-    private suspend fun enrichCredits(track: Track): Track {
+    /** Fill metadata omitted by YouTube Charts before playback. */
+    private suspend fun enrichMetadata(track: Track): Track {
         if (track.source != MusicSource.YOUTUBE_MUSIC &&
             track.source != MusicSource.UNKNOWN
         ) {
@@ -175,28 +172,41 @@ class PlayerViewModel @Inject constructor(
         val videoId = YouTubeMusicSourceClient.extractVideoId(track.id)
             ?: YouTubeMusicSourceClient.extractVideoId(track.sourceUri.orEmpty())
             ?: return track
-        val credited = runCatching { ytmCredits.artistsForVideo(videoId) }
-            .getOrDefault(emptyList())
-        if (credited.isEmpty()) {
-            // Last resort: split a joined name blob into separate names (no channel ids)
-            if (track.artists.size == 1) {
-                val n = track.artists.first().name
-                val parts = ArtistNameSplitter.split(n)
-                if (parts.size >= 2) {
-                    return track.copy(
-                        artists = parts.map { name ->
-                            com.openwave.music.core.domain.Artist(
-                                id = "yt-${name.hashCode()}",
-                                name = name,
-                                source = MusicSource.YOUTUBE_MUSIC,
-                            )
-                        },
-                    )
-                }
-            }
-            return track
+        val searched = if (track.album == null) {
+            runCatching {
+                ytmCredits.searchSongs("${track.title} ${track.artists.firstOrNull()?.name.orEmpty()}", 10)
+                    .firstOrNull { it.id == videoId }
+            }.getOrNull()
+        } else {
+            null
         }
-        return track.copy(artists = credited)
+        val credited = searched?.artists.orEmpty().ifEmpty {
+            runCatching { ytmCredits.artistsForVideo(videoId) }.getOrDefault(emptyList())
+        }
+        if (credited.isNotEmpty()) {
+            return track.copy(
+                artists = credited,
+                album = track.album ?: searched?.album,
+                coverUrl = track.coverUrl ?: searched?.coverUrl,
+            )
+        }
+        // Last resort: split a joined name blob into separate names (no channel ids)
+        if (track.artists.size == 1) {
+            val parts = ArtistNameSplitter.split(track.artists.first().name)
+            if (parts.size >= 2) {
+                return track.copy(
+                    album = track.album ?: searched?.album,
+                    artists = parts.map { name ->
+                        com.openwave.music.core.domain.Artist(
+                            id = "yt-${name.hashCode()}",
+                            name = name,
+                            source = MusicSource.YOUTUBE_MUSIC,
+                        )
+                    },
+                )
+            }
+        }
+        return track.copy(album = track.album ?: searched?.album)
     }
 
     fun playUnified(hit: UnifiedTrack) {

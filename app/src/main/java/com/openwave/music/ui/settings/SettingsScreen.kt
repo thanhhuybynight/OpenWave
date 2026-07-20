@@ -40,6 +40,7 @@ import com.openwave.music.core.domain.AudioFxState
 import com.openwave.music.core.domain.EqPreset
 import com.openwave.music.core.domain.SoundType
 import com.openwave.music.features.audiofx.AudioFxSettingsStore
+import com.openwave.music.features.settings.DisplaySettingsStore
 import com.openwave.music.presentation.SettingsViewModel
 import kotlin.math.roundToInt
 
@@ -54,6 +55,7 @@ fun SettingsScreen(
     val autoContinue by vm.autoContinue.collectAsStateWithLifecycle()
     val crossplay by vm.crossplay.collectAsStateWithLifecycle()
     val audioFx by vm.audioFxState.collectAsStateWithLifecycle()
+    val densityScale by vm.densityScale.collectAsStateWithLifecycle()
     val scheme = MaterialTheme.colorScheme
     val context = LocalContext.current
 
@@ -88,6 +90,29 @@ fun SettingsScreen(
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp),
         ) {
+            SectionLabel("Hiển thị")
+            Text(
+                text = "Kích thước giao diện: ${(densityScale * 100).roundToInt()}%",
+                style = MaterialTheme.typography.titleMedium,
+                color = scheme.onSurface,
+            )
+            Text(
+                text = "Kéo sang trái để chữ, icon và thành phần giao diện nhỏ hơn.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = scheme.onSurfaceVariant,
+            )
+            Slider(
+                value = densityScale,
+                onValueChange = vm::setDensityScale,
+                valueRange = DisplaySettingsStore.MIN_SCALE..DisplaySettingsStore.MAX_SCALE,
+                steps = 5,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(20.dp))
+            HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
+            Spacer(Modifier.height(20.dp))
+
             SectionLabel("Phát nhạc")
             SettingsSwitchRow(
                 title = "Auto-queue (Radio)",

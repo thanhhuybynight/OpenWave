@@ -48,6 +48,7 @@ import com.openwave.music.core.domain.Album
 import com.openwave.music.core.domain.ArtistPage
 import com.openwave.music.core.domain.Track
 import com.openwave.music.presentation.ArtistViewModel
+import com.openwave.music.ui.continuousMarquee
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -269,8 +270,9 @@ private fun HighlightRow(
             text = track.title,
             style = MaterialTheme.typography.titleMedium,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .continuousMarquee(),
         )
     }
 }

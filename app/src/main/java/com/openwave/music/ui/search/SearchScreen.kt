@@ -51,16 +51,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.openwave.music.core.domain.Artist
 import com.openwave.music.core.domain.MusicSource
 import com.openwave.music.core.domain.SourcePolicy
 import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.TrackDisplay
+import com.openwave.music.ui.continuousMarquee
 import com.openwave.music.core.domain.UnifiedTrack
 import com.openwave.music.presentation.SearchViewModel
 import kotlinx.coroutines.launch
@@ -69,6 +70,11 @@ import kotlin.math.roundToInt
 
 /** Width of the reveal panel (queue + radio + playlist). Swipe content right to open. */
 private val RevealWidth = 128.dp
+
+private data class SearchArtistHit(
+    val artist: Artist,
+    val coverUrl: String?,
+)
 
 @Composable
 fun SearchScreen(
@@ -79,6 +85,7 @@ fun SearchScreen(
     onAddToQueue: (Track) -> Unit = {},
     onStartStation: (Track) -> Unit = {},
     onToggleFavorite: (Track) -> Unit = {},
+    onArtistClick: (Artist, String?) -> Unit = { _, _ -> },
     favoriteIds: Set<String> = emptySet(),
     isResolving: Boolean = false,
     playError: String? = null,
@@ -88,6 +95,25 @@ fun SearchScreen(
     val query by vm.query.collectAsStateWithLifecycle()
     val batch by vm.batch.collectAsStateWithLifecycle()
     val filter by vm.sourceFilter.collectAsStateWithLifecycle()
+    val artistHits = remember(query, batch.tracks) {
+        val q = query.trim().lowercase(Locale.getDefault())
+        batch.tracks
+            .flatMap { hit -> hit.track.artists.map { SearchArtistHit(it, hit.track.coverUrl) } }
+            .filter { hit ->
+                hit.artist.source == MusicSource.YOUTUBE_MUSIC &&
+                    hit.artist.name.lowercase(Locale.getDefault()).contains(q)
+            }
+            .distinctBy { it.artist.id.ifBlank { it.artist.name.lowercase(Locale.getDefault()) } }
+            .sortedBy { hit ->
+                val name = hit.artist.name.lowercase(Locale.getDefault())
+                when {
+                    name == q -> 0
+                    name.startsWith(q) -> 1
+                    else -> 2
+                }
+            }
+            .take(5)
+    }
 
     Column(
         modifier = Modifier
@@ -106,7 +132,7 @@ fun SearchScreen(
             onValueChange = vm::onQueryChange,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 8.dp),
+                .height(48.dp),
             placeholder = { Text("Song, artist, remix…") },
             leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
             trailingIcon = {
@@ -145,31 +171,12 @@ fun SearchScreen(
             )
         }
 
-        if (query.isNotBlank()) {
-            Row(
+        if (query.isNotBlank() && !batch.isComplete) {
+            LinearProgressIndicator(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (!batch.isComplete) {
-                    LinearProgressIndicator(modifier = Modifier.weight(1f).height(2.dp))
-                }
-                batch.completedSources.forEach { src ->
-                    val err = batch.errorBySource[src]
-                    Text(
-                        text = SourcePolicy.displayName(src).substringBefore(" ") +
-                            if (err != null) "!" else " ✓",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (err != null) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                }
-            }
+                    .height(2.dp),
+            )
         }
 
         if (isResolving) {
@@ -197,6 +204,16 @@ fun SearchScreen(
             contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
+            items(
+                artistHits,
+                key = { "artist-${it.artist.id}" },
+            ) { hit ->
+                SearchArtistRow(
+                    hit = hit,
+                    onClick = { onArtistClick(hit.artist, hit.coverUrl) },
+                )
+            }
+
             items(
                 batch.tracks,
                 key = { "${it.track.source}:${it.track.id}" },
@@ -226,6 +243,60 @@ fun SearchScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SearchArtistRow(
+    hit: SearchArtistHit,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(72.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(scheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (hit.coverUrl != null) {
+                AsyncImage(
+                    model = hit.coverUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Text(
+                    hit.artist.name.take(1).uppercase(Locale.getDefault()),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = scheme.onPrimaryContainer,
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = hit.artist.name,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                modifier = Modifier.continuousMarquee(),
+            )
+            Text(
+                text = "Nghệ sĩ · YouTube Music",
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -379,14 +450,14 @@ private fun SwipeRevealTrackRow(
                         text = track.title,
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.continuousMarquee(),
                     )
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = scheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.continuousMarquee(),
                     )
                 }
                 IconButton(onClick = onToggleFavorite) {

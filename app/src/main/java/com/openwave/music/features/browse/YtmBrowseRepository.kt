@@ -236,13 +236,14 @@ class YtmBrowseRepository @Inject constructor(
     }
 
     private fun formatViews(raw: String): String {
-        val n = raw.toLongOrNull() ?: return raw
-        return when {
-            n >= 1_000_000_000 -> String.format(Locale.US, "%.1fB lượt xem", n / 1_000_000_000.0)
-            n >= 1_000_000 -> String.format(Locale.US, "%.1fM lượt xem", n / 1_000_000.0)
-            n >= 1_000 -> String.format(Locale.US, "%.1fK lượt xem", n / 1_000.0)
-            else -> "$n lượt xem"
+        val n = raw.toLongOrNull() ?: return "$raw total views"
+        val amount = when {
+            n >= 1_000_000_000 -> String.format(Locale.US, "%.1fB", n / 1_000_000_000.0)
+            n >= 1_000_000 -> String.format(Locale.US, "%.1fM", n / 1_000_000.0)
+            n >= 1_000 -> String.format(Locale.US, "%.1fK", n / 1_000.0)
+            else -> n.toString()
         }
+        return "$amount total views"
     }
 
     companion object {

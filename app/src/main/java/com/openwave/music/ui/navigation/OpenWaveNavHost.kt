@@ -261,6 +261,16 @@ fun OpenWaveNavHost(
                                 showFullPlayer = true
                             },
                             onToggleFavorite = { track -> libraryVm.toggleFavorite(track) },
+                            onArtistClick = { artist, avatar ->
+                                navController.navigate(
+                                    artistRoute(
+                                        name = artist.name,
+                                        id = artist.id,
+                                        avatar = avatar ?: artist.imageUrl,
+                                        channel = artist.id.takeIf { it.startsWith("UC") },
+                                    ),
+                                )
+                            },
                             favoriteIds = favoriteIds,
                             isResolving = isResolving || stationBuilding,
                             playError = playError,
@@ -325,6 +335,8 @@ fun OpenWaveNavHost(
                     MiniPlayerBar(
                         snapshot = snapshot,
                         onPlayPause = playerVm::togglePlayPause,
+                        onSkipPrevious = playerVm::skipPrevious,
+                        onSkipNext = playerVm::skipNext,
                         onExpand = { showFullPlayer = true },
                         onSeek = playerVm::seekTo,
                         isFavorite = snapshot.track?.id in favoriteIds,

@@ -129,26 +129,17 @@ class YouTubeChartsClient @Inject constructor(
             ?.optJSONObject("content")
             ?: error("no chart content")
 
-        val trackTypes = content.optJSONArray("trackTypes") ?: JSONArray()
-        val trackBlock = pickPeriodBlock(trackTypes, preferDaily = true)
-        val songs = parseTracks(trackBlock?.optJSONArray("trackViews"), limit)
+        // Daily Top Songs live under `videos`; `trackTypes` TOP_VIEWS_CHART is weekly.
+        val videoTypes = content.optJSONArray("videos") ?: JSONArray()
+        val trackBlock = pickPeriodBlock(videoTypes, period = "DAILY")
+        val songs = parseTracks(trackBlock?.optJSONArray("videoViews"), limit)
         val songsEnd = trackBlock?.optString("endDate")?.takeIf { it.isNotBlank() }
         val songsPeriod = trackBlock?.optString("chartPeriodType")?.takeIf { it.isNotBlank() }
 
-        val artistTypes = content.optJSONArray("artists") ?: JSONArray()
-        val artistBlock = pickPeriodBlock(artistTypes, preferDaily = true)
-        var artists = parseArtists(artistBlock?.optJSONArray("artistViews"), limit)
-        var artistsEnd = artistBlock?.optString("endDate")?.takeIf { it.isNotBlank() }
-        var artistsPeriod = artistBlock?.optString("chartPeriodType")?.takeIf { it.isNotBlank() }
-
-        // Prefer daily artists derived from daily song chart when API only has weekly artists.
-        val songsAreDaily = songsPeriod?.contains("DAILY", ignoreCase = true) == true
-        val artistsAreDaily = artistsPeriod?.contains("DAILY", ignoreCase = true) == true
-        if (songsAreDaily && !artistsAreDaily && songs.isNotEmpty()) {
-            artists = deriveArtistsFromSongs(songs, limit)
-            artistsEnd = songsEnd
-            artistsPeriod = songsPeriod
-        }
+        // API only exposes weekly artist chart; derive daily artists from daily songs.
+        val artists = deriveArtistsFromSongs(songs, limit)
+        val artistsEnd = songsEnd
+        val artistsPeriod = songsPeriod
 
         Log.i(
             TAG,
@@ -166,27 +157,16 @@ class YouTubeChartsClient @Inject constructor(
         )
     }
 
-    /** Prefer DAILY TOP_VIEWS_CHART block when present. */
-    private fun pickPeriodBlock(arr: JSONArray, preferDaily: Boolean): JSONObject? {
-        var daily: JSONObject? = null
-        var weekly: JSONObject? = null
-        var first: JSONObject? = null
+    private fun pickPeriodBlock(arr: JSONArray, period: String): JSONObject? {
         for (i in 0 until arr.length()) {
-            val o = arr.optJSONObject(i) ?: continue
-            if (first == null) first = o
-            val listType = o.optString("listType")
-            if (listType.isNotBlank() && listType != "TOP_VIEWS_CHART") continue
-            val period = o.optString("chartPeriodType")
-            when {
-                period.contains("DAILY", ignoreCase = true) -> daily = o
-                period.contains("WEEKLY", ignoreCase = true) -> weekly = weekly ?: o
+            val block = arr.optJSONObject(i) ?: continue
+            if (block.optString("listType") == "TOP_VIEWS_CHART" &&
+                block.optString("chartPeriodType").contains(period, ignoreCase = true)
+            ) {
+                return block
             }
         }
-        return when {
-            preferDaily && daily != null -> daily
-            weekly != null -> weekly
-            else -> first
-        }
+        return null
     }
 
     private fun parseTracks(arr: JSONArray?, limit: Int): List<ChartSong> {
@@ -196,8 +176,12 @@ class YouTubeChartsClient @Inject constructor(
             if (out.size >= limit) break
             val o = arr.optJSONObject(i) ?: continue
             if (!o.optBoolean("isVisible", true)) continue
-            val videoId = o.optString("encryptedVideoId").takeIf { it.isNotBlank() } ?: continue
-            val title = o.optString("name").takeIf { it.isNotBlank() } ?: continue
+            val videoId = o.optString("id").takeIf { it.isNotBlank() }
+                ?: o.optString("encryptedVideoId").takeIf { it.isNotBlank() }
+                ?: continue
+            val title = o.optString("title").takeIf { it.isNotBlank() }
+                ?: o.optString("name").takeIf { it.isNotBlank() }
+                ?: continue
             val artistsArr = o.optJSONArray("artists") ?: JSONArray()
             val artists = ArrayList<Artist>()
             for (j in 0 until artistsArr.length()) {

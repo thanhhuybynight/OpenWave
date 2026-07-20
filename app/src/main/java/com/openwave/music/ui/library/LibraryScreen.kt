@@ -68,6 +68,7 @@ import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.TrackDisplay
 import com.openwave.music.presentation.FavoritesPlaylistId
 import com.openwave.music.presentation.LibraryViewModel
+import com.openwave.music.ui.continuousMarquee
 import java.util.Locale
 
 @Composable
@@ -498,7 +499,7 @@ private fun TrackLine(
                 title,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.continuousMarquee(),
             )
             if (subtitle.isNotBlank()) {
                 Text(
@@ -506,7 +507,7 @@ private fun TrackLine(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.continuousMarquee(),
                 )
             }
         }

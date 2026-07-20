@@ -91,6 +91,7 @@ import com.openwave.music.core.domain.PlayerSnapshot
 import com.openwave.music.core.domain.SleepTimerState
 import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.TrackDisplay
+import com.openwave.music.ui.continuousMarquee
 import com.openwave.music.ui.theme.OpenWaveTheme
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -206,8 +207,8 @@ fun NowPlayingScreen(
                         text = track?.title ?: "Select a track",
                         style = MaterialTheme.typography.headlineMedium,
                         color = scheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                        maxLines = 1,
+                        modifier = Modifier.continuousMarquee(),
                     )
                     if (subtitle.isNotBlank()) {
                         Spacer(Modifier.height(4.dp))
@@ -216,7 +217,7 @@ fun NowPlayingScreen(
                             style = MaterialTheme.typography.bodyLarge,
                             color = scheme.onSurfaceVariant,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.continuousMarquee(),
                         )
                     }
                 }
@@ -704,12 +705,14 @@ private fun TransportRow(
 }
 
 /**
- * Compact bottom mini-player — title + subtitle, favorite, play/pause, seek bar.
+ * Compact bottom mini-player — title + subtitle, favorite, playback controls, seek bar.
  */
 @Composable
 fun MiniPlayerBar(
     snapshot: PlayerSnapshot,
     onPlayPause: () -> Unit,
+    onSkipPrevious: () -> Unit,
+    onSkipNext: () -> Unit,
     onExpand: () -> Unit,
     onSeek: (Long) -> Unit = {},
     isFavorite: Boolean = false,
@@ -776,14 +779,14 @@ fun MiniPlayerBar(
                         style = MaterialTheme.typography.titleMedium,
                         color = scheme.onSecondaryContainer,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.continuousMarquee(),
                     )
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = scheme.onSecondaryContainer.copy(alpha = 0.75f),
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.continuousMarquee(),
                     )
                 }
                 IconButton(
@@ -804,6 +807,16 @@ fun MiniPlayerBar(
                         tint = if (isFavorite) scheme.error else scheme.onSecondaryContainer,
                     )
                 }
+                IconButton(
+                    onClick = onSkipPrevious,
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.SkipPrevious,
+                        contentDescription = "Bài trước",
+                        tint = scheme.onSecondaryContainer,
+                    )
+                }
                 FilledIconButton(
                     onClick = onPlayPause,
                     shape = CircleShape,
@@ -816,6 +829,16 @@ fun MiniPlayerBar(
                     Icon(
                         imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                         contentDescription = if (isPlaying) "Pause" else "Play",
+                    )
+                }
+                IconButton(
+                    onClick = onSkipNext,
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.SkipNext,
+                        contentDescription = "Bài sau",
+                        tint = scheme.onSecondaryContainer,
                     )
                 }
             }

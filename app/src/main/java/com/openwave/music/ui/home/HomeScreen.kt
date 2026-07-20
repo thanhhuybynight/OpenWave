@@ -52,6 +52,7 @@ import coil.compose.AsyncImage
 import com.openwave.music.core.domain.BrowseItem
 import com.openwave.music.core.domain.Track
 import com.openwave.music.presentation.HomeViewModel
+import com.openwave.music.ui.continuousMarquee
 import java.util.Calendar
 import java.util.Locale
 
@@ -442,10 +443,11 @@ private fun RecommendCard(
         Text(
             text = item.title,
             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
+            maxLines = 1,
             color = HomeMeadow.Ink,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            modifier = Modifier
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .continuousMarquee(),
         )
     }
 }
@@ -505,16 +507,16 @@ private fun RankedTrackRow(
                 text = item.title,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
                 color = HomeMeadow.Ink,
+                modifier = Modifier.continuousMarquee(),
             )
             item.subtitle?.takeIf { it.isNotBlank() }?.let { sub ->
                 Text(
                     text = sub,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     color = HomeMeadow.InkMuted,
+                    modifier = Modifier.continuousMarquee(),
                 )
             }
         }
@@ -586,5 +588,14 @@ private fun ArtistAvatar(
             overflow = TextOverflow.Ellipsis,
             color = HomeMeadow.Ink,
         )
+        item.subtitle?.takeIf { it.isNotBlank() }?.let { views ->
+            Text(
+                text = views,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                color = HomeMeadow.InkMuted,
+                modifier = Modifier.continuousMarquee(),
+            )
+        }
     }
 }
