@@ -14,11 +14,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -30,11 +33,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.openwave.music.BuildConfig
 import com.openwave.music.core.domain.AudioFxState
 import com.openwave.music.core.domain.EqPreset
@@ -42,6 +48,8 @@ import com.openwave.music.core.domain.SoundType
 import com.openwave.music.features.audiofx.AudioFxSettingsStore
 import com.openwave.music.features.settings.DisplaySettingsStore
 import com.openwave.music.presentation.SettingsViewModel
+import com.openwave.music.presentation.SoundCloudSessionViewModel
+import com.openwave.music.presentation.YouTubeSessionViewModel
 import kotlin.math.roundToInt
 
 private const val PROJECT_URL = "https://github.com/thanhhuybynight/OpenWave"
@@ -49,7 +57,11 @@ private const val PROJECT_URL = "https://github.com/thanhhuybynight/OpenWave"
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onYouTubeLogin: () -> Unit = {},
+    onSoundCloudLogin: () -> Unit = {},
     vm: SettingsViewModel = hiltViewModel(),
+    sessionVm: YouTubeSessionViewModel = hiltViewModel(),
+    soundCloudVm: SoundCloudSessionViewModel = hiltViewModel(),
     modifier: Modifier = Modifier,
 ) {
     val autoContinue by vm.autoContinue.collectAsStateWithLifecycle()
@@ -58,6 +70,10 @@ fun SettingsScreen(
     val densityScale by vm.densityScale.collectAsStateWithLifecycle()
     val scheme = MaterialTheme.colorScheme
     val context = LocalContext.current
+    val youtubeLoggedIn by sessionVm.loggedIn.collectAsStateWithLifecycle()
+    val youtubeAccount by sessionVm.account.collectAsStateWithLifecycle()
+    val soundCloudLoggedIn by soundCloudVm.loggedIn.collectAsStateWithLifecycle()
+    val soundCloudAccount by soundCloudVm.account.collectAsStateWithLifecycle()
 
     Column(
         modifier = modifier
@@ -90,6 +106,65 @@ fun SettingsScreen(
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp),
         ) {
+            SectionLabel("YouTube Music")
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                youtubeAccount?.avatarUrl?.let {
+                    AsyncImage(
+                        model = it,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(48.dp).clip(CircleShape),
+                    )
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(youtubeAccount?.name ?: if (youtubeLoggedIn) "YouTube Music" else "Chưa đăng nhập")
+                    Text(
+                        if (youtubeLoggedIn) "Đồng bộ đề xuất cá nhân" else "Đăng nhập để tải đề xuất cá nhân",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
+                Button(onClick = if (youtubeLoggedIn) sessionVm::logout else onYouTubeLogin) {
+                    Text(if (youtubeLoggedIn) "Đăng xuất" else "Đăng nhập")
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            SectionLabel("SoundCloud")
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                soundCloudAccount?.avatarUrl?.let {
+                    AsyncImage(
+                        model = it,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(48.dp).clip(CircleShape),
+                    )
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(soundCloudAccount?.name ?: if (soundCloudLoggedIn) "SoundCloud" else "Chưa đăng nhập")
+                    Text(
+                        if (soundCloudLoggedIn) "Đồng bộ likes và playlist chỉ đọc" else "Đăng nhập bằng phiên web SoundCloud",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
+                Button(onClick = { if (soundCloudLoggedIn) soundCloudVm.logout() else onSoundCloudLogin() }) {
+                    Text(if (soundCloudLoggedIn) "Đăng xuất" else "Đăng nhập")
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
+            Spacer(Modifier.height(20.dp))
+
             SectionLabel("Hiển thị")
             Text(
                 text = "Kích thước giao diện: ${(densityScale * 100).roundToInt()}%",

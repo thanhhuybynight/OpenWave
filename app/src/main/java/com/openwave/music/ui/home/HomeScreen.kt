@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -34,7 +35,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -83,6 +87,18 @@ fun HomeScreen(
     val feed by vm.feed.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
+    val loadingMore by vm.loadingMore.collectAsStateWithLifecycle()
+    val loadMoreGeneration by vm.loadMoreGeneration.collectAsStateWithLifecycle()
+    val listState = rememberLazyListState()
+    val nearEnd by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            info.totalItemsCount > 0 && (info.visibleItemsInfo.lastOrNull()?.index ?: -1) >= info.totalItemsCount - 4
+        }
+    }
+    LaunchedEffect(nearEnd, feed?.recommendations?.items?.size, loadMoreGeneration) {
+        if (nearEnd) vm.loadMore()
+    }
 
     Box(
         modifier = modifier
@@ -102,6 +118,7 @@ fun HomeScreen(
         FlowerDots(modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 12.dp))
 
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding(),
@@ -165,59 +182,69 @@ fun HomeScreen(
                         emoji = "🎧",
                     )
                 }
-                if (home.recommendations.items.isNotEmpty()) {
-                    item {
-                        RecommendationRow(
-                            items = home.recommendations.items.filterIsInstance<BrowseItem.TrackItem>(),
-                            onPlay = onPlayTrack,
-                        )
+                val recommendationBatches = home.recommendations.items
+                    .filterIsInstance<BrowseItem.TrackItem>()
+                    .chunked(10)
+                items(
+                    recommendationBatches,
+                    key = { batch -> "personalized-${batch.first().id}" },
+                ) { batch ->
+                    RecommendationRow(items = batch, onPlay = onPlayTrack)
+                    Spacer(Modifier.height(18.dp))
+                }
+                if (loadingMore) item {
+                    Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = HomeMeadow.Blush)
                     }
                 }
+            }
+        }
+    }
+}
 
-                item {
-                    Spacer(Modifier.height(8.dp))
-                    MeadowSectionTitle(
-                        title = "Hàng đầu",
-                        emoji = "🌸",
-                        subtitle = home.topSongs.subtitle
-                            ?: home.chartRegionLabel
-                            ?: home.chartDateLabel,
-                    )
-                }
-
-                item {
-                    MeadowSectionTitle(
-                        title = home.topSongs.title.ifBlank { "Bài hát hàng đầu" },
-                        compact = true,
-                    )
-                }
-                if (home.topSongs.items.isNotEmpty()) {
-                    items(
-                        home.topSongs.items.filterIsInstance<BrowseItem.TrackItem>(),
-                        key = { "song-${it.id}" },
-                    ) { item ->
-                        RankedTrackRow(
-                            item = item,
-                            onClick = { onPlayTrack(item.track) },
-                        )
-                    }
-                }
-
-                item {
-                    Spacer(Modifier.height(12.dp))
-                    MeadowSectionTitle(
-                        title = home.topArtists.title.ifBlank { "Nghệ sĩ hàng đầu" },
-                        emoji = "🌿",
-                    )
-                }
-                if (home.topArtists.items.isNotEmpty()) {
-                    item {
-                        ArtistRow(
-                            items = home.topArtists.items.filterIsInstance<BrowseItem.ArtistItem>(),
-                            onClick = onArtistClick,
-                        )
-                    }
-                }
+@Composable
+fun TrendingScreen(
+    onPlayTrack: (Track) -> Unit,
+    onArtistClick: (BrowseItem.ArtistItem) -> Unit,
+    vm: HomeViewModel,
+    modifier: Modifier = Modifier,
+) {
+    val feed by vm.feed.collectAsStateWithLifecycle()
+    val loading by vm.loading.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
+    LazyColumn(
+        modifier = modifier.fillMaxSize().background(HomeMeadow.Cream).statusBarsPadding(),
+        contentPadding = PaddingValues(bottom = 108.dp),
+    ) {
+        item {
+            MeadowSectionTitle(
+                title = "Xu hướng",
+                emoji = "🔥",
+                subtitle = feed?.topSongs?.subtitle ?: feed?.chartRegionLabel ?: feed?.chartDateLabel,
+            )
+        }
+        if (loading && feed == null) item {
+            Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = HomeMeadow.Blush)
+            }
+        }
+        error?.takeIf { feed == null }?.let { message -> item {
+            Column(Modifier.padding(20.dp)) {
+                Text(message, color = HomeMeadow.RankPink)
+                TextButton(onClick = vm::refresh) { Text("Thử lại") }
+            }
+        } }
+        feed?.let { home ->
+            item { MeadowSectionTitle(home.topSongs.title.ifBlank { "Bài hát hàng đầu" }, compact = true) }
+            items(home.topSongs.items.filterIsInstance<BrowseItem.TrackItem>(), key = { "song-${it.id}" }) { item ->
+                RankedTrackRow(item, onClick = { onPlayTrack(item.track) })
+            }
+            item {
+                Spacer(Modifier.height(12.dp))
+                MeadowSectionTitle(home.topArtists.title.ifBlank { "Nghệ sĩ hàng đầu" }, emoji = "🌿")
+            }
+            item {
+                ArtistRow(home.topArtists.items.filterIsInstance<BrowseItem.ArtistItem>(), onArtistClick)
             }
         }
     }

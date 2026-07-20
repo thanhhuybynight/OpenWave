@@ -183,7 +183,7 @@ class SoundCloudSourceClient @Inject constructor(
     /**
      * Uploader username becomes the sole artist credit (used in subtitles).
      */
-    private fun parseTrack(o: JSONObject?): Track? {
+    internal fun parseTrack(o: JSONObject?): Track? {
         if (o == null) return null
         val id = extractId(o) ?: return null
         val title = o.optString("title").trim().ifBlank { return null }
@@ -300,7 +300,7 @@ class SoundCloudSourceClient @Inject constructor(
         return first.body
     }
 
-    private fun withClientId(url: String): String {
+    internal fun withClientId(url: String): String {
         val cid = requireClientId()
         val sep = if (url.contains("?")) "&" else "?"
         return if (url.contains("client_id=")) {

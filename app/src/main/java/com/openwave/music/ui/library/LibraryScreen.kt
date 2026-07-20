@@ -43,6 +43,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -53,6 +54,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,20 +66,29 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.openwave.music.core.domain.LocalPlaylist
+import com.openwave.music.core.domain.Playlist
 import com.openwave.music.core.domain.Track
 import com.openwave.music.core.domain.TrackDisplay
 import com.openwave.music.presentation.FavoritesPlaylistId
 import com.openwave.music.presentation.LibraryViewModel
+import com.openwave.music.presentation.SoundCloudSessionViewModel
 import com.openwave.music.ui.continuousMarquee
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 @Composable
 fun LibraryScreen(
     onPlayTrack: (Track) -> Unit,
     onPlayQueue: (List<Track>, Int) -> Unit,
     vm: LibraryViewModel = hiltViewModel(),
+    soundCloudVm: SoundCloudSessionViewModel = hiltViewModel(),
 ) {
     val playlists by vm.playlists.collectAsStateWithLifecycle()
+    val soundCloudLikes by soundCloudVm.likes.collectAsStateWithLifecycle()
+    val soundCloudPlaylists by soundCloudVm.playlists.collectAsStateWithLifecycle()
+    val soundCloudLoggedIn by soundCloudVm.loggedIn.collectAsStateWithLifecycle()
+    val soundCloudLoading by soundCloudVm.loading.collectAsStateWithLifecycle()
+    val soundCloudError by soundCloudVm.error.collectAsStateWithLifecycle()
     val favorites by vm.favorites.collectAsStateWithLifecycle()
     val selectedId by vm.selectedPlaylistId.collectAsStateWithLifecycle()
     val playlistTracks by vm.playlistTracks.collectAsStateWithLifecycle()
@@ -86,6 +97,11 @@ fun LibraryScreen(
     val snackbar = remember { SnackbarHostState() }
     var showCreate by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<LocalPlaylist?>(null) }
+    var remoteTitle by remember { mutableStateOf<String?>(null) }
+    var remoteTracks by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var remoteLoading by remember { mutableStateOf(false) }
+    var remoteError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(message) {
         message?.let {
@@ -94,8 +110,13 @@ fun LibraryScreen(
         }
     }
 
-    BackHandler(enabled = selectedId != null) {
-        vm.closePlaylist()
+    BackHandler(enabled = remoteTitle != null || selectedId != null) {
+        if (remoteTitle != null) {
+            remoteTitle = null
+            remoteTracks = emptyList()
+            remoteLoading = false
+            remoteError = null
+        } else vm.closePlaylist()
     }
 
     Scaffold(
@@ -128,7 +149,26 @@ fun LibraryScreen(
                 label = "library_playlist",
                 modifier = Modifier.fillMaxSize(),
             ) { openId ->
-                if (openId != null) {
+                if (remoteTitle != null) {
+                    PlaylistDetail(
+                        title = remoteTitle.orEmpty(),
+                        tracks = remoteTracks,
+                        isRemote = true,
+                        loading = remoteLoading,
+                        error = remoteError,
+                        onBack = {
+                            remoteTitle = null
+                            remoteTracks = emptyList()
+                            remoteLoading = false
+                            remoteError = null
+                        },
+                        onPlayAll = { if (remoteTracks.isNotEmpty()) onPlayQueue(remoteTracks, 0) },
+                        onPlayTrack = { index, _ -> onPlayQueue(remoteTracks, index) },
+                        onRemove = {},
+                        onDeletePlaylist = {},
+                        onRename = {},
+                    )
+                } else if (openId != null) {
                     PlaylistDetail(
                         title = vm.playlistTitle(openId),
                         tracks = playlistTracks,
@@ -160,6 +200,27 @@ fun LibraryScreen(
                         onOpen = vm::openPlaylist,
                         onCreate = { showCreate = true },
                         onDelete = vm::deletePlaylist,
+                        soundCloudLikes = soundCloudLikes,
+                        soundCloudPlaylists = soundCloudPlaylists,
+                        soundCloudLoggedIn = soundCloudLoggedIn,
+                        soundCloudLoading = soundCloudLoading,
+                        soundCloudError = soundCloudError,
+                        onOpenSoundCloudLikes = {
+                            remoteTitle = "SoundCloud Likes"
+                            remoteTracks = soundCloudLikes
+                        },
+                        onOpenSoundCloudPlaylist = { playlist ->
+                            remoteTitle = playlist.title
+                            remoteTracks = emptyList()
+                            remoteError = null
+                            remoteLoading = true
+                            scope.launch {
+                                soundCloudVm.tracks(playlist)
+                                    .onSuccess { remoteTracks = it }
+                                    .onFailure { remoteError = it.message ?: "Không tải được playlist" }
+                                remoteLoading = false
+                            }
+                        },
                     )
                 }
             }
@@ -196,6 +257,13 @@ private fun LibraryHome(
     onOpen: (String) -> Unit,
     onCreate: () -> Unit,
     onDelete: (String) -> Unit,
+    soundCloudLikes: List<Track>,
+    soundCloudPlaylists: List<Playlist>,
+    soundCloudLoggedIn: Boolean,
+    soundCloudLoading: Boolean,
+    soundCloudError: String?,
+    onOpenSoundCloudLikes: () -> Unit,
+    onOpenSoundCloudPlaylist: (Playlist) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -241,6 +309,50 @@ private fun LibraryHome(
                 onClick = { onOpen(pl.id) },
                 onDelete = { onDelete(pl.id) },
             )
+        }
+        if (soundCloudLoggedIn) {
+            item { Text("SoundCloud", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 14.dp)) }
+            when {
+                soundCloudLoading -> item { CircularProgressIndicator(Modifier.padding(16.dp)) }
+                soundCloudError != null -> item { EmptyHint(soundCloudError) }
+                else -> {
+                    item {
+                        RemotePlaylistRow(
+                            title = "Likes",
+                            subtitle = "${soundCloudLikes.size} bài hát",
+                            coverUrl = soundCloudLikes.firstOrNull()?.coverUrl,
+                            onClick = onOpenSoundCloudLikes,
+                        )
+                    }
+                    items(soundCloudPlaylists, key = { "soundcloud:${it.id}" }) { playlist ->
+                        RemotePlaylistRow(
+                            title = playlist.title,
+                            subtitle = "Playlist SoundCloud",
+                            coverUrl = playlist.coverUrl,
+                            onClick = { onOpenSoundCloudPlaylist(playlist) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemotePlaylistRow(title: String, subtitle: String, coverUrl: String?, onClick: () -> Unit) {
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            AsyncImage(
+                model = coverUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(52.dp).clip(RoundedCornerShape(12.dp)),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
@@ -372,6 +484,9 @@ private fun PlaylistDetail(
     title: String,
     tracks: List<Track>,
     isFavorites: Boolean = false,
+    isRemote: Boolean = false,
+    loading: Boolean = false,
+    error: String? = null,
     onBack: () -> Unit,
     onPlayAll: () -> Unit,
     onPlayTrack: (Int, Track) -> Unit,
@@ -396,7 +511,7 @@ private fun PlaylistDetail(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            if (!isFavorites) {
+            if (!isFavorites && !isRemote) {
                 TextButton(onClick = onRename) { Text("Đổi tên") }
                 IconButton(onClick = onDeletePlaylist) {
                     Icon(Icons.Outlined.Delete, contentDescription = "Xóa playlist")
@@ -404,7 +519,13 @@ private fun PlaylistDetail(
             }
         }
 
-        if (tracks.isNotEmpty()) {
+        if (loading) {
+            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else if (error != null) {
+            EmptyHint(error)
+        } else if (tracks.isNotEmpty()) {
             FilledTonalButton(
                 onClick = onPlayAll,
                 modifier = Modifier
@@ -434,7 +555,8 @@ private fun PlaylistDetail(
                     title = track.title,
                     subtitle = TrackDisplay.subtitle(track),
                     coverUrl = track.coverUrl,
-                    trailing = {
+                    trailing = if (isRemote) null else {
+                        {
                         IconButton(onClick = { onRemove(track.id) }) {
                             Icon(
                                 if (isFavorites) Icons.Filled.Favorite else Icons.Outlined.Delete,
@@ -445,6 +567,7 @@ private fun PlaylistDetail(
                                     MaterialTheme.colorScheme.onSurfaceVariant
                                 },
                             )
+                        }
                         }
                     },
                     onClick = { onPlayTrack(index, track) },

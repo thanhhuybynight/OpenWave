@@ -7,9 +7,12 @@ import com.openwave.music.core.domain.BrowseShelf
 import com.openwave.music.core.domain.BrowseShelfKind
 import com.openwave.music.core.domain.HomeFeed
 import com.openwave.music.core.domain.MusicSource
+import com.openwave.music.core.domain.MusicSourceClient
 import com.openwave.music.core.domain.Track
 import com.openwave.music.data.source.IpRegionClient
 import com.openwave.music.data.source.youtube.YouTubeChartsClient
+import com.openwave.music.data.source.youtube.YtmAccountHomeClient
+import com.openwave.music.features.settings.YouTubeSessionStore
 import com.openwave.music.features.BrowseRepository
 import com.openwave.music.features.LibraryRepository
 import com.openwave.music.features.home.HistoryRecommendationEngine
@@ -36,12 +39,20 @@ class YtmBrowseRepository @Inject constructor(
     private val recommendations: HistoryRecommendationEngine,
     private val library: LibraryRepository,
     private val ipRegion: IpRegionClient,
+    private val accountHome: YtmAccountHomeClient,
+    private val session: YouTubeSessionStore,
+    private val clients: Set<@JvmSuppressWildcards MusicSourceClient>,
 ) : BrowseRepository {
 
     @Volatile
     private var cache: HomeFeed? = null
     private var cacheAt: Long = 0L
-
+    private var homeContinuation: String? = null
+    private val seenTrackIds = hashSetOf<String>()
+    private val seenTrackKeys = hashSetOf<String>()
+    private var searchCursor = 0
+    private var searchRound = 0
+    private var fallbackSeeds: List<Track> = emptyList()
     override suspend fun homeShelves(): List<BrowseShelf> =
         homeFeed().shelves()
 
@@ -67,16 +78,46 @@ class YtmBrowseRepository @Inject constructor(
                     }
             }
             val recsJob = async {
-                runCatching { recommendations.recommendations(24) }
-                    .onFailure { Log.e(TAG, "recs: ${it.message}", it) }
-                    .getOrElse {
-                        BrowseShelf(
-                            id = "de_xuat",
-                            title = "Đề xuất",
-                            kind = BrowseShelfKind.RECOMMENDATIONS,
-                            subtitle = "Không tải được đề xuất",
-                        )
+                val accountTracks = if (session.loggedIn.first()) {
+                    runCatching {
+                        accountHome.account()
+                        accountHome.recommendations(limit = 24).also {
+                            homeContinuation = it.continuation
+                        }.tracks.let { diversify(it) }
                     }
+                        .onFailure { Log.e(TAG, "account home: ${it.message}", it) }
+                        .getOrDefault(emptyList())
+                } else {
+                    emptyList()
+                }
+                if (accountTracks.isNotEmpty()) {
+                    BrowseShelf(
+                        id = "de_xuat_youtube",
+                        title = "Dành cho bạn",
+                        kind = BrowseShelfKind.RECOMMENDATIONS,
+                        subtitle = "Đồng bộ từ YouTube Music",
+                        items = accountTracks.map { track ->
+                            BrowseItem.TrackItem(
+                                id = track.id,
+                                title = track.title,
+                                subtitle = track.artists.joinToString { it.name },
+                                coverUrl = track.coverUrl,
+                                track = track,
+                            )
+                        },
+                    )
+                } else {
+                    runCatching { recommendations.recommendations(24) }
+                        .onFailure { Log.e(TAG, "recs: ${it.message}", it) }
+                        .getOrElse {
+                            BrowseShelf(
+                                id = "de_xuat",
+                                title = "Đề xuất",
+                                kind = BrowseShelfKind.RECOMMENDATIONS,
+                                subtitle = "Không tải được đề xuất",
+                            )
+                        }
+                }
             }
             val region = regionJob.await()
             val regionCode = region?.countryCode ?: preferredRegion()
@@ -156,6 +197,14 @@ class YtmBrowseRepository @Inject constructor(
             )
         }
 
+        val recommendationTracks = feed.recommendations.items
+            .filterIsInstance<BrowseItem.TrackItem>()
+            .map { it.track }
+        fallbackSeeds = (recommendationTracks + feed.listenAgain.items
+            .filterIsInstance<BrowseItem.TrackItem>()
+            .map { it.track })
+            .distinctBy(::trackKey)
+        recommendationTracks.forEach(::markSeen)
         cache = feed
         cacheAt = now
         feed
@@ -173,9 +222,129 @@ class YtmBrowseRepository @Inject constructor(
         }
     }
 
+    suspend fun loadMoreRecommendations(): List<Track> = withContext(Dispatchers.IO) {
+        val continued = homeContinuation?.let { continuation ->
+            runCatching { accountHome.recommendations(continuation) }
+                .onFailure { Log.w(TAG, "home continuation: ${it.message}") }
+                .getOrNull()
+                ?.also { homeContinuation = it.continuation }
+                ?.tracks
+                .orEmpty()
+        }.orEmpty()
+        val fresh = unseen(diversify(continued))
+        if (fresh.isNotEmpty()) return@withContext fresh
+
+        repeat(MAX_FALLBACK_QUERIES) {
+            val query = nextFallbackQuery() ?: return@repeat
+            val hits = searchBoth(query, FALLBACK_RESULTS_PER_SOURCE)
+            val batch = unseen(hits)
+            if (batch.isNotEmpty()) return@withContext batch
+        }
+        emptyList()
+    }
+
+    private suspend fun searchBoth(query: String, limit: Int): List<Track> = coroutineScope {
+        clients.filter { it.source == MusicSource.YOUTUBE_MUSIC || it.source == MusicSource.SOUNDCLOUD }
+            .map { client ->
+                async {
+                    runCatching { client.search(query, limit).tracks }
+                        .onFailure { Log.w(TAG, "${client.source} '$query': ${it.message}") }
+                        .getOrDefault(emptyList())
+                }
+            }.map { it.await() }.let(::interleave)
+    }
+
+    private fun nextFallbackQuery(): String? {
+        if (fallbackSeeds.isEmpty()) return null
+        val seed = fallbackSeeds[searchCursor % fallbackSeeds.size]
+        val artist = seed.artists.firstOrNull()?.name.orEmpty().trim()
+        val title = seed.title.trim()
+        val variant = searchRound % QUERY_VARIANTS
+        val query = when (variant) {
+            0 -> listOf(artist, title).filter(String::isNotBlank).joinToString(" ")
+            1 -> "$artist mix".trim()
+            2 -> "$title related".trim()
+            else -> "$artist $title radio".trim()
+        }
+        searchCursor++
+        if (searchCursor % fallbackSeeds.size == 0) searchRound++
+        return query.takeIf(String::isNotBlank)
+    }
+
+    private fun unseen(tracks: List<Track>): List<Track> {
+        val fresh = tracks.filter { track ->
+            val id = "${track.source}:${track.id}"
+            val key = trackKey(track)
+            id !in seenTrackIds && key !in seenTrackKeys && markSeen(track)
+        }
+        if (fresh.isNotEmpty()) {
+            fallbackSeeds = (fallbackSeeds + fresh).distinctBy(::trackKey).takeLast(MAX_FALLBACK_SEEDS)
+        }
+        return fresh
+    }
+
+    private fun markSeen(track: Track): Boolean {
+        seenTrackIds += "${track.source}:${track.id}"
+        seenTrackKeys += trackKey(track)
+        return true
+    }
+
+    private fun trackKey(track: Track): String = buildString {
+        append(normalize(track.title))
+        append('|')
+        append(normalize(track.artists.firstOrNull()?.name.orEmpty()))
+    }
+
+    private fun normalize(value: String): String =
+        value.lowercase(Locale.US).filter(Char::isLetterOrDigit)
+
+    private fun interleave(groups: List<List<Track>>): List<Track> = buildList {
+        repeat(groups.maxOfOrNull { it.size } ?: 0) { index ->
+            groups.forEach { group -> group.getOrNull(index)?.let(::add) }
+        }
+    }
+
+    private suspend fun diversify(youtube: List<Track>): List<Track> {
+        if (youtube.isEmpty()) return emptyList()
+        val soundCloud = clients.firstOrNull { it.source == MusicSource.SOUNDCLOUD }
+        val seeds = youtube.asSequence().map { track ->
+            "${track.artists.firstOrNull()?.name.orEmpty()} ${track.title}".trim()
+        }.filter(String::isNotBlank).distinct().take(4).toList()
+        val soundCloudTracks = coroutineScope {
+            seeds.map { query ->
+                async {
+                    runCatching { soundCloud?.search(query, 3)?.tracks.orEmpty() }
+                        .onFailure { Log.w(TAG, "SoundCloud '$query': ${it.message}") }
+                        .getOrDefault(emptyList())
+                }
+            }.map { it.await() }.flatten()
+        }
+        val seen = hashSetOf<String>()
+        fun key(track: Track) = buildString {
+            append(track.title.lowercase(Locale.US).filter(Char::isLetterOrDigit))
+            append('|')
+            append(track.artists.firstOrNull()?.name.orEmpty().lowercase(Locale.US).filter(Char::isLetterOrDigit))
+        }
+        val yt = youtube.filter { seen.add(key(it)) }
+        val sc = soundCloudTracks.filter { seen.add(key(it)) }
+        return buildList {
+            val size = maxOf(yt.size, sc.size)
+            repeat(size) { index ->
+                yt.getOrNull(index)?.let(::add)
+                sc.getOrNull(index)?.let(::add)
+            }
+        }
+    }
+
     override fun invalidate() {
         cache = null
         cacheAt = 0L
+        homeContinuation = null
+        seenTrackIds.clear()
+        seenTrackKeys.clear()
+        searchCursor = 0
+        searchRound = 0
+        fallbackSeeds = emptyList()
     }
 
     private suspend fun listenAgainShelf(limit: Int): BrowseShelf {
@@ -249,5 +418,9 @@ class YtmBrowseRepository @Inject constructor(
     companion object {
         private const val TAG = "HomeBrowse"
         private const val CACHE_TTL_MS = 10 * 60_000L
+        private const val MAX_FALLBACK_QUERIES = 4
+        private const val MAX_FALLBACK_SEEDS = 200
+        private const val FALLBACK_RESULTS_PER_SOURCE = 8
+        private const val QUERY_VARIANTS = 4
     }
 }

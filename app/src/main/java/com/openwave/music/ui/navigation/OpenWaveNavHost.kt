@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Person
@@ -48,15 +49,21 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.openwave.music.core.domain.Track
+import com.openwave.music.presentation.HomeViewModel
 import com.openwave.music.presentation.LibraryViewModel
 import com.openwave.music.presentation.PlayerViewModel
 import com.openwave.music.ui.artist.ArtistScreen
 import com.openwave.music.ui.home.HomeScreen
+import com.openwave.music.ui.home.TrendingScreen
 import com.openwave.music.ui.library.AddToPlaylistDialog
 import com.openwave.music.ui.library.LibraryScreen
 import com.openwave.music.ui.player.MiniPlayerBar
 import com.openwave.music.ui.player.NowPlayingScreen
 import com.openwave.music.ui.profile.ProfileScreen
+import com.openwave.music.ui.profile.SoundCloudLoginScreen
+import com.openwave.music.ui.profile.YouTubeLoginScreen
+import com.openwave.music.presentation.SoundCloudSessionViewModel
+import com.openwave.music.presentation.YouTubeSessionViewModel
 import com.openwave.music.ui.search.SearchScreen
 import com.openwave.music.ui.settings.SettingsScreen
 
@@ -66,6 +73,7 @@ private enum class RootDest(
     val icon: ImageVector,
 ) {
     Home("home", "Home", Icons.Outlined.Home),
+    Trending("trending", "Xu hướng", Icons.AutoMirrored.Outlined.TrendingUp),
     Search("search", "Search", Icons.Outlined.Search),
     Library("library", "Library", Icons.Outlined.LibraryMusic),
     Profile("profile", "Profile", Icons.Outlined.Person),
@@ -111,7 +119,10 @@ private fun isRootTab(route: String?): Boolean {
 @Composable
 fun OpenWaveNavHost(
     playerVm: PlayerViewModel = hiltViewModel(),
+    homeVm: HomeViewModel = hiltViewModel(),
     libraryVm: LibraryViewModel = hiltViewModel(),
+    youtubeSessionVm: YouTubeSessionViewModel = hiltViewModel(),
+    soundCloudSessionVm: SoundCloudSessionViewModel = hiltViewModel(),
 ) {
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
@@ -139,7 +150,8 @@ fun OpenWaveNavHost(
 
     val onArtistRoute = currentRoute?.startsWith("artist") == true
     val onSettingsRoute = currentRoute == "settings"
-    val showBottomBar = !onArtistRoute && !onSettingsRoute && !showFullPlayer
+    val onLoginRoute = currentRoute == "youtube-login" || currentRoute == "soundcloud-login"
+    val showBottomBar = !onArtistRoute && !onSettingsRoute && !onLoginRoute && !showFullPlayer
 
     val canGoBack = showFullPlayer ||
         addTrack != null ||
@@ -247,6 +259,23 @@ fun OpenWaveNavHost(
                                 )
                             },
                             onAddToPlaylist = { addTrack = it },
+                            vm = homeVm,
+                        )
+                    }
+                    composable(RootDest.Trending.route) {
+                        TrendingScreen(
+                            onPlayTrack = playerVm::playTrack,
+                            onArtistClick = { item ->
+                                navController.navigate(
+                                    artistRoute(
+                                        name = item.title,
+                                        id = item.id,
+                                        avatar = item.coverUrl ?: item.artist.imageUrl,
+                                        channel = item.channelId,
+                                    ),
+                                )
+                            },
+                            vm = homeVm,
                         )
                     }
                     composable(RootDest.Search.route) {
@@ -282,6 +311,7 @@ fun OpenWaveNavHost(
                             onPlayTrack = { playerVm.playTrack(it) },
                             onPlayQueue = { tracks, index -> playerVm.playQueue(tracks, index) },
                             vm = libraryVm,
+                            soundCloudVm = soundCloudSessionVm,
                         )
                     }
                     composable(RootDest.Profile.route) {
@@ -292,9 +322,33 @@ fun OpenWaveNavHost(
                             },
                         )
                     }
+                    composable("youtube-login") {
+                        YouTubeLoginScreen(
+                            onBack = { navController.popBackStack() },
+                            onLoginReady = {
+                                youtubeSessionVm.finishLogin { success ->
+                                    if (success) navController.popBackStack()
+                                }
+                            },
+                        )
+                    }
+                    composable("soundcloud-login") {
+                        SoundCloudLoginScreen(
+                            onBack = { navController.popBackStack() },
+                            onLoginReady = {
+                                soundCloudSessionVm.finishLogin { success ->
+                                    if (success) navController.popBackStack()
+                                }
+                            },
+                        )
+                    }
                     composable("settings") {
                         SettingsScreen(
                             onBack = { navController.popBackStack() },
+                            onYouTubeLogin = { navController.navigate("youtube-login") },
+                            onSoundCloudLogin = { navController.navigate("soundcloud-login") },
+                            sessionVm = youtubeSessionVm,
+                            soundCloudVm = soundCloudSessionVm,
                         )
                     }
                     composable(
